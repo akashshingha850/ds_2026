@@ -25,13 +25,13 @@ from utils import ZMQNode
 class DetectionProcessor(ZMQNode):
     def __init__(self, model_path):
         super().__init__('detection')
-        self.pub_port = DETECTION_COCO_PORT
+        self.pub_port = DETECTION_PORT
         self.model_path = model_path
         self.model = self.load_model()
         self.sub_socket = self.context.socket(zmq.SUB)
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
         self.det_pub = self.context.socket(zmq.PUB)
-        self.det_pub.bind(f"tcp://*:{DETECTION_COCO_PORT}")
+        self.det_pub.bind(f"tcp://*:{DETECTION_PORT}")
         self.image_count = 0
 
     def load_model(self):
@@ -148,7 +148,7 @@ class DetectionProcessor(ZMQNode):
         sub_thread = threading.Thread(target=self.subscriber_loop, daemon=True)
         sub_thread.start()
 
-        logging.info(f"[DET_PUB:{self.node_id}] Listening on tcp://*:{DETECTION_COCO_PORT}")
+        logging.info(f"[DET_PUB:{self.node_id}] Listening on tcp://*:{DETECTION_PORT}")
         logging.info(f"[SUB:{self.node_id}] Discovering motion devices...")
         logging.info(f"[PUB:{self.node_id}] Local IP: {self.get_local_ip()}")
 

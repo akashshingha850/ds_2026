@@ -30,7 +30,7 @@ KERNEL_SIZE = 5
 MOTION_FPS = 10
 
 # YOLO model path
-YOLO_COCO_PATH = "yolo26n_ncnn_model"  # NCNN model path
+YOLO_COCO_PATH = "detection_models/yolo26n_ncnn_model"  # NCNN model path
 YOLO_WPN_PATH = "best_ncnn_model"  # WPN model path
 
 # Recording settings
