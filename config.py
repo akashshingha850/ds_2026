@@ -30,7 +30,7 @@ KERNEL_SIZE = 5
 MOTION_FPS = 10
 
 # YOLO model path
-MODEL_PATH = "yolo26n_ncnn_model"
+YOLO_COCO_PATH = "yolo26n_ncnn_model"  # NCNN model path
 
 # Recording settings
 RECORD_DURATION = 15

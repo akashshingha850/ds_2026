@@ -33,6 +33,13 @@ class ZMQNode:
         self.context = zmq.Context()
         self.peers_info = {}
         self.stop_event = threading.Event()
+        self.local_ip = self.get_local_ip()
+        # Calculate subnet broadcast assuming /24
+        ip_parts = self.local_ip.split('.')
+        if len(ip_parts) == 4:
+            self.broadcast_addr = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+        else:
+            self.broadcast_addr = "255.255.255.255"  # fallback
 
     def get_local_ip(self):
         try:
@@ -61,11 +68,11 @@ class ZMQNode:
                         {
                             "type": "discover",
                             "node_id": self.node_id,
-                            "ip": self.get_local_ip(),
+                            "ip": self.local_ip,
                             "port": getattr(self, 'pub_port', 0),  # Subclass should set this
                         }
                     ).encode("utf-8"),
-                    (DISCOVERY_BROADCAST, DISCOVERY_PORT),
+                    (self.broadcast_addr, DISCOVERY_PORT),
                 )
 
                 data, addr = sock.recvfrom(4096)
@@ -84,7 +91,7 @@ class ZMQNode:
                                 json.dumps({
                                     "type": "announce",
                                     "node_id": self.node_id,
-                                    "ip": self.get_local_ip(),
+                                    "ip": self.local_ip,
                                     "port": getattr(self, 'pub_port', 0),
                                 }).encode("utf-8"), (addr[0], DISCOVERY_PORT)
                             )

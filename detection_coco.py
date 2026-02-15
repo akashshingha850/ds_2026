@@ -18,7 +18,7 @@ sys.path.append('.')
 from config import (
     MOTION_IMAGE_PORT,
     DETECTION_COCO_PORT,
-    MODEL_PATH,
+    YOLO_COCO_PATH,
 )
 from utils import ZMQNode
 
@@ -33,7 +33,6 @@ class DetectionProcessor(ZMQNode):
         self.det_pub = self.context.socket(zmq.PUB)
         self.det_pub.bind(f"tcp://*:{DETECTION_COCO_PORT}")
         self.image_count = 0
-        self.motion_source_endpoint = f"tcp://127.0.0.1:{MOTION_IMAGE_PORT}"
 
     def load_model(self):
         """Load the YOLO model from the given path."""
@@ -68,8 +67,24 @@ class DetectionProcessor(ZMQNode):
         logging.info(f"Detection results published: {detections}")
 
     def subscriber_loop(self):
-        self.sub_socket.connect(self.motion_source_endpoint)
-        print(f"[SUB] Connected to {self.motion_source_endpoint}")
+        # Wait for motion device to be discovered
+        motion_peer = None
+        while not self.stop_event.is_set() and motion_peer is None:
+            for peer_id, peer_info in self.peers_info.items():
+                if peer_id.endswith("-motion"):
+                    motion_peer = peer_info
+                    break
+            if motion_peer is None:
+                print("[SUB] Waiting for motion device discovery...")
+                time.sleep(2)
+        
+        if motion_peer is None:
+            print("[SUB] No motion device found, exiting")
+            return
+            
+        motion_endpoint = f"tcp://{motion_peer['ip']}:{MOTION_IMAGE_PORT}"
+        self.sub_socket.connect(motion_endpoint)
+        print(f"[SUB] Connected to {motion_endpoint}")
 
         while not self.stop_event.is_set():
             try:
@@ -126,14 +141,15 @@ class DetectionProcessor(ZMQNode):
         self.sub_socket.close()
 
     def run(self):
-        # Discovery disabled; using fixed local endpoint for motion images
+        # Start discovery to find motion device
+        self.start_discovery()
 
         # Start subscriber thread
         sub_thread = threading.Thread(target=self.subscriber_loop, daemon=True)
         sub_thread.start()
 
         logging.info(f"[DET_PUB:{self.node_id}] Listening on tcp://*:{DETECTION_COCO_PORT}")
-        logging.info(f"[SUB:{self.node_id}] Subscribing to motion images on port {MOTION_IMAGE_PORT}")
+        logging.info(f"[SUB:{self.node_id}] Discovering motion devices...")
         logging.info(f"[PUB:{self.node_id}] Local IP: {self.get_local_ip()}")
 
         print(f"[DET:{self.node_id}] Detection processor started")
@@ -150,7 +166,7 @@ class DetectionProcessor(ZMQNode):
 
 if __name__ == "__main__":
     # Model path - NCNN model in root dir
-    model_path = MODEL_PATH
+    model_path = YOLO_COCO_PATH
 
     processor = DetectionProcessor(model_path)
     processor.run()
