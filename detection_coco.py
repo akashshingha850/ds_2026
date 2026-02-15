@@ -17,7 +17,7 @@ sys.path.append('.')
 
 from config import (
     MOTION_IMAGE_PORT,
-    DETECTION_COCO_PORT,
+    DETECTION_PORT,
     YOLO_COCO_PATH,
 )
 from utils import ZMQNode

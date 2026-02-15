@@ -19,7 +19,7 @@ MOTION_FLAG_PORT = 5556
 MOTION_IMAGE_PORT = 5557
 
 # Detection results port
-DETECTION_COCO_PORT = 5558
+DETECTION_PORT = 5558
 
 # Motion detection settings
 MOTION_URL = 'rtsp://192.168.144.25:8554/main.264'  #'rtsp://127.0.0.1:8554/stream'
@@ -31,6 +31,7 @@ MOTION_FPS = 10
 
 # YOLO model path
 YOLO_COCO_PATH = "yolo26n_ncnn_model"  # NCNN model path
+YOLO_WPN_PATH = "best_ncnn_model"  # WPN model path
 
 # Recording settings
 RECORD_DURATION = 15
