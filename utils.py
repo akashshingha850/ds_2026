@@ -105,7 +105,7 @@ class ZMQNode:
 
         sock.close()
 
-    def discover_peer_by_suffix(self, suffix, timeout=10, fallback_to_localhost=False, fallback_port=0):
+    def discover_peer_by_suffix(self, suffix, timeout=30, fallback_to_localhost=False, fallback_port=0):
         """
         Discover a peer by node_id suffix (e.g., '-motion', '-system_monitor').
         
