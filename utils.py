@@ -105,6 +105,42 @@ class ZMQNode:
 
         sock.close()
 
+    def discover_peer_by_suffix(self, suffix, timeout=10, fallback_to_localhost=False, fallback_port=0):
+        """
+        Discover a peer by node_id suffix (e.g., '-motion', '-system_monitor').
+        
+        Args:
+            suffix: The suffix to match in peer node_id (e.g., '-motion')
+            timeout: Seconds to wait for discovery before fallback
+            fallback_to_localhost: If True, return localhost after timeout
+            fallback_port: Port to use for localhost fallback
+        
+        Returns:
+            dict with 'ip' and 'port', or None if not found
+        """
+        start_time = time.time()
+        
+        while not self.stop_event.is_set():
+            # Check discovered peers
+            for peer_id, peer_info in self.peers_info.items():
+                if peer_id.endswith(suffix):
+                    logging.info(f"[Discovery:{self.node_id}] Found remote peer: {peer_id} at {peer_info['ip']}")
+                    return peer_info
+            
+            # Check timeout
+            elapsed = time.time() - start_time
+            if elapsed > timeout:
+                if fallback_to_localhost:
+                    logging.info(f"[Discovery:{self.node_id}] No remote peer found, using localhost")
+                    return {'ip': 'localhost', 'port': fallback_port}
+                else:
+                    logging.warning(f"[Discovery:{self.node_id}] No peer with suffix '{suffix}' found after {timeout}s")
+                    return None
+            
+            time.sleep(2)
+        
+        return None
+
     def start_discovery(self):
         discovery_thread = threading.Thread(target=self.discovery_loop, daemon=True)
         discovery_thread.start()

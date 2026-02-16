@@ -28,7 +28,7 @@ PIXEL_DIFF_THRESHOLD = 50
 BLUR_SIGMA = 1.5
 KERNEL_SIZE = 5
 MOTION_FPS = 10
-DISCOVERY_PORT_MOTION = 50002  # Shared with detection for cross-device discovery
+DISCOVERY_PORT_MOTION = 50001  # Shared with detection for cross-device discovery
 
 # -----------------------------------------------------------------------------
 # DETECTION (YOLO)

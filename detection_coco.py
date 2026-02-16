@@ -69,16 +69,13 @@ class DetectionProcessor(ZMQNode):
         logging.info(f"Detection results published: {detections}")
 
     def subscriber_loop(self):
-        # Wait for motion device to be discovered
-        motion_peer = None
-        while not self.stop_event.is_set() and motion_peer is None:
-            for peer_id, peer_info in self.peers_info.items():
-                if peer_id.endswith("-motion"):
-                    motion_peer = peer_info
-                    break
-            if motion_peer is None:
-                print("[SUB] Waiting for motion device discovery...")
-                time.sleep(2)
+        # Discover motion device (remote or localhost fallback)
+        motion_peer = self.discover_peer_by_suffix(
+            suffix='-motion',
+            timeout=10,
+            fallback_to_localhost=True,
+            fallback_port=MOTION_IMAGE_PORT
+        )
         
         if motion_peer is None:
             print("[SUB] No motion device found, exiting")
