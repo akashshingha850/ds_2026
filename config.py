@@ -15,7 +15,9 @@ DISCOVERY_PORT = 50000  # Default discovery port (fallback)
 # -----------------------------------------------------------------------------
 MOTION_FLAG_PORT = 5556
 MOTION_IMAGE_PORT = 5557
-MOTION_URL = 'rtsp://192.168.144.25:8554/main.264'  # 'rtsp://127.0.0.1:8554/stream'
+# MOTION_URL = 'rtsp://192.168.144.25:8554/main.264'  # SIYI Camera RTSP URL
+MOTION_URL = 'rtsp://127.0.0.1:8554/stream' # Localhost RTSP URL for testing (use with local RTSP server)
+
 MOTION_THRESHOLD = 0.33
 PIXEL_DIFF_THRESHOLD = 50
 BLUR_SIGMA = 1.5
@@ -26,17 +28,19 @@ DISCOVERY_PORT_MOTION = 50000  # Shared with detection for cross-device discover
 # -----------------------------------------------------------------------------
 # DETECTION (YOLO)
 # -----------------------------------------------------------------------------
-DETECTION_PORT = 5558
+DETECTION_COCO_PORT = 5558
 YOLO_COCO_PATH = "detection_models/yolo26n_ncnn_model"  # NCNN model path
 YOLO_COCO_CONFIDENCE = 0.5  # Confidence threshold for YOLO COCO
-YOLO_WPN_PATH = "best_ncnn_model"  # WPN model path
+DETECTION_WPN_PORT = 5559
+YOLO_WPN_PATH = "detection_models/yolo_weapon_ncnn_model"  # WPN model path
+YOLO_WPN_CONFIDENCE = 0.5  # Confidence threshold for YOLO WPN
 DISCOVERY_PORT_DETECTION = 50000  # Dedicated discovery port for detection nodes
 
 # -----------------------------------------------------------------------------
 # SYSTEM MONITOR
 # -----------------------------------------------------------------------------
 SYSTEM_MONITOR_INTERVAL = 1  # seconds
-SYSTEM_MONITOR_PORT = 5559
+SYSTEM_MONITOR_PORT = 5560
 # SYSTEM_MONITOR_IP = "localhost"  # For server.py connection (if needed)
 DISCOVERY_PORT_SYSTEM = 50001  # Dedicated discovery port for system_monitor nodes
 

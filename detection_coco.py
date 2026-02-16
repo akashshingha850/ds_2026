@@ -17,7 +17,7 @@ sys.path.append('.')
 
 from config import (
     MOTION_IMAGE_PORT,
-    DETECTION_PORT,
+    DETECTION_COCO_PORT,
     YOLO_COCO_PATH,
     YOLO_COCO_CONFIDENCE,
     DISCOVERY_PORT_DETECTION,
@@ -26,14 +26,14 @@ from utils import ZMQNode
 
 class DetectionProcessor(ZMQNode):
     def __init__(self, model_path):
-        super().__init__('detection', discovery_port=DISCOVERY_PORT_DETECTION)
-        self.pub_port = DETECTION_PORT
+        super().__init__('detection_coco', discovery_port=DISCOVERY_PORT_DETECTION)
+        self.pub_port = DETECTION_COCO_PORT
         self.model_path = model_path
         self.model = self.load_model()
         self.sub_socket = self.context.socket(zmq.SUB)
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
         self.det_pub = self.context.socket(zmq.PUB)
-        self.det_pub.bind(f"tcp://*:{DETECTION_PORT}")
+        self.det_pub.bind(f"tcp://*:{DETECTION_COCO_PORT}")
         self.image_count = 0
 
     def load_model(self):
@@ -126,7 +126,7 @@ class DetectionProcessor(ZMQNode):
                             })
 
                     send_ts = message.get("ts", "unknown")
-                    logging.info(f"Image from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} - Results: {len(detections)} detections")
+                    logging.info(f"{self.node_id} recieved image from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} - Results: {len(detections)} detections")
 
                     # Publish detection results
                     self.publish_detection_results(detections, detection_ts, sender)
@@ -147,7 +147,7 @@ class DetectionProcessor(ZMQNode):
         sub_thread = threading.Thread(target=self.subscriber_loop, daemon=True)
         sub_thread.start()
 
-        logging.info(f"[DET_PUB:{self.node_id}] Listening on tcp://*:{DETECTION_PORT}")
+        logging.info(f"[DET_PUB:{self.node_id}] Listening on tcp://*:{DETECTION_COCO_PORT}")
         logging.info(f"[SUB:{self.node_id}] Discovering motion devices...")
         logging.info(f"[PUB:{self.node_id}] Local IP: {self.get_local_ip()}")
 

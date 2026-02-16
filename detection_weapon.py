@@ -17,21 +17,23 @@ sys.path.append('.')
 
 from config import (
     MOTION_IMAGE_PORT,
-    DETECTION_PORT,
+    DETECTION_WPN_PORT,
     YOLO_WPN_PATH,
+    YOLO_WPN_CONFIDENCE,
+    DISCOVERY_PORT_DETECTION,
 )
 from utils import ZMQNode
 
 class DetectionProcessor(ZMQNode):
     def __init__(self, model_path):
-        super().__init__('detection')
-        self.pub_port = DETECTION_PORT
+        super().__init__('detection_weapon', discovery_port=DISCOVERY_PORT_DETECTION)
+        self.pub_port = DETECTION_WPN_PORT
         self.model_path = model_path
         self.model = self.load_model()
         self.sub_socket = self.context.socket(zmq.SUB)
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
         self.det_pub = self.context.socket(zmq.PUB)
-        self.det_pub.bind(f"tcp://*:{DETECTION_PORT}")
+        self.det_pub.bind(f"tcp://*:{DETECTION_WPN_PORT}")
         self.image_count = 0
 
     def load_model(self):
@@ -40,7 +42,7 @@ class DetectionProcessor(ZMQNode):
 
     def run_inference(self, image):
         """Run inference on the image using the model."""
-        return self.model(image)
+        return self.model(image, conf=YOLO_WPN_CONFIDENCE)
 
     def save_image(self, results, sender, timestamp):
         """Save YOLO-annotated result image to disk."""
@@ -67,16 +69,13 @@ class DetectionProcessor(ZMQNode):
         logging.info(f"Detection results published: {detections}")
 
     def subscriber_loop(self):
-        # Wait for motion device to be discovered
-        motion_peer = None
-        while not self.stop_event.is_set() and motion_peer is None:
-            for peer_id, peer_info in self.peers_info.items():
-                if peer_id.endswith("-motion"):
-                    motion_peer = peer_info
-                    break
-            if motion_peer is None:
-                print("[SUB] Waiting for motion device discovery...")
-                time.sleep(2)
+        # Discover motion device (remote or localhost fallback)
+        motion_peer = self.discover_peer_by_suffix(
+            suffix='-motion',
+            timeout=10,
+            fallback_to_localhost=True,
+            fallback_port=MOTION_IMAGE_PORT
+        )
         
         if motion_peer is None:
             print("[SUB] No motion device found, exiting")
@@ -127,7 +126,7 @@ class DetectionProcessor(ZMQNode):
                             })
 
                     send_ts = message.get("ts", "unknown")
-                    logging.info(f"Image from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} - Results: {len(detections)} detections")
+                    logging.info(f"{self.node_id}-yolo-wpn recieved image from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} - Results: {len(detections)} detections")
 
                     # Publish detection results
                     self.publish_detection_results(detections, detection_ts, sender)
@@ -148,7 +147,7 @@ class DetectionProcessor(ZMQNode):
         sub_thread = threading.Thread(target=self.subscriber_loop, daemon=True)
         sub_thread.start()
 
-        logging.info(f"[DET_PUB:{self.node_id}] Listening on tcp://*:{DETECTION_PORT}")
+        logging.info(f"[DET_PUB:{self.node_id}] Listening on tcp://*:{DETECTION_WPN_PORT}")
         logging.info(f"[SUB:{self.node_id}] Discovering motion devices...")
         logging.info(f"[PUB:{self.node_id}] Local IP: {self.get_local_ip()}")
 
