@@ -1,6 +1,6 @@
 import psutil
 import time
-from config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT
+from config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT, DISCOVERY_PORT_SYSTEM
 from datetime import datetime
 import socket
 import glob
@@ -174,7 +174,7 @@ def get_speeds():
 
 class SystemMonitor(ZMQNode):
     def __init__(self):
-        super().__init__('system_monitor')
+        super().__init__('system_monitor', discovery_port=DISCOVERY_PORT_SYSTEM)
         self.pub_port = SYSTEM_MONITOR_PORT  # For discovery
         self.status_pub = self.context.socket(zmq.PUB)
         self.status_pub.bind(f"tcp://*:{SYSTEM_MONITOR_PORT}")

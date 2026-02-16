@@ -7,7 +7,7 @@ import threading
 import sys
 import time
 from datetime import datetime
-from config import SYSTEM_MONITOR_PORT, SYSTEM_MONITOR_INTERVAL
+from config import SYSTEM_MONITOR_PORT, SYSTEM_MONITOR_INTERVAL, DISCOVERY_PORT_SYSTEM
 from collections import deque
 import pandas as pd
 import streamlit as st
@@ -21,7 +21,7 @@ from utils import ZMQNode
 @st.cache_resource
 class DataCollector(ZMQNode):
     def __init__(self):
-        ZMQNode.__init__(self, 'server')
+        ZMQNode.__init__(self, 'server', discovery_port=DISCOVERY_PORT_SYSTEM)
         self.data = {}  # dict of node_id -> deque
         self.lock = threading.Lock()
         self.running = True

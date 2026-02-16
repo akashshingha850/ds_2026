@@ -28,7 +28,7 @@ formatter = logging.Formatter('%(asctime)s - %(message)s')
 logging.getLogger('').addHandler(console)
 
 class ZMQNode:
-    def __init__(self, node_suffix):
+    def __init__(self, node_suffix, discovery_port=None):
         self.node_id = f"{socket.gethostname()}-{node_suffix}"
         self.context = zmq.Context()
         self.peers_info = {}
@@ -40,6 +40,7 @@ class ZMQNode:
             self.broadcast_addr = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
         else:
             self.broadcast_addr = "255.255.255.255"  # fallback
+        self.discovery_port = discovery_port or DISCOVERY_PORT
 
     def get_local_ip(self):
         try:
@@ -54,9 +55,9 @@ class ZMQNode:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         try:
-            sock.bind(("", DISCOVERY_PORT))
+            sock.bind(("", self.discovery_port))
         except OSError as e:
-            logging.warning(f"Discovery port {DISCOVERY_PORT} already in use: {e}. Skipping discovery.")
+            logging.warning(f"Discovery port {self.discovery_port} already in use: {e}. Skipping discovery.")
             sock.close()
             return
         sock.settimeout(1.0)
@@ -72,7 +73,7 @@ class ZMQNode:
                             "port": getattr(self, 'pub_port', 0),  # Subclass should set this
                         }
                     ).encode("utf-8"),
-                    (self.broadcast_addr, DISCOVERY_PORT),
+                    (self.broadcast_addr, self.discovery_port),
                 )
 
                 data, addr = sock.recvfrom(4096)
@@ -93,7 +94,7 @@ class ZMQNode:
                                     "node_id": self.node_id,
                                     "ip": self.local_ip,
                                     "port": getattr(self, 'pub_port', 0),
-                                }).encode("utf-8"), (addr[0], DISCOVERY_PORT)
+                                }).encode("utf-8"), (addr[0], self.discovery_port)
                             )
             except Exception:
                 pass

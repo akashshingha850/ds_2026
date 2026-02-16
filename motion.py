@@ -25,6 +25,7 @@ from config import (
     PIXEL_DIFF_THRESHOLD,
     BLUR_SIGMA,
     KERNEL_SIZE,
+    DISCOVERY_PORT_MOTION,
 )
 from utils import ZMQNode
 
@@ -38,7 +39,7 @@ def get_video_dimensions(url):
 
 class MotionDetector(ZMQNode):
     def __init__(self):
-        super().__init__('motion')
+        super().__init__('motion', discovery_port=DISCOVERY_PORT_MOTION)
         self.pub_port = MOTION_IMAGE_PORT  # For discovery
         self.flag_pub = self.context.socket(zmq.PUB)
         self.flag_pub.bind(f"tcp://*:{MOTION_FLAG_PORT}")

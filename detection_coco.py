@@ -19,12 +19,14 @@ from config import (
     MOTION_IMAGE_PORT,
     DETECTION_PORT,
     YOLO_COCO_PATH,
+    YOLO_COCO_CONFIDENCE,
+    DISCOVERY_PORT_DETECTION,
 )
 from utils import ZMQNode
 
 class DetectionProcessor(ZMQNode):
     def __init__(self, model_path):
-        super().__init__('detection')
+        super().__init__('detection', discovery_port=DISCOVERY_PORT_DETECTION)
         self.pub_port = DETECTION_PORT
         self.model_path = model_path
         self.model = self.load_model()
@@ -40,7 +42,7 @@ class DetectionProcessor(ZMQNode):
 
     def run_inference(self, image):
         """Run inference on the image using the model."""
-        return self.model(image)
+        return self.model(image, conf=YOLO_COCO_CONFIDENCE)
 
     def save_image(self, results, sender, timestamp):
         """Save YOLO-annotated result image to disk."""
