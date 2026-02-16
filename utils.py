@@ -118,6 +118,10 @@ class ZMQNode:
         Returns:
             dict with 'ip' and 'port', or None if not found
         """
+        # Give discovery thread time to do initial broadcast/receive
+        logging.info(f"[Discovery:{self.node_id}] Waiting for peer with suffix '{suffix}'...")
+        time.sleep(3)
+        
         start_time = time.time()
         
         while not self.stop_event.is_set():
