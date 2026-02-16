@@ -118,7 +118,7 @@ class DetectionProcessor(ZMQNode):
                     for result in results:
                         for box in result.boxes:
                             class_id = int(box.cls)
-                            confidence = float(box.conf)
+                            confidence = round(float(box.conf), 2)
                             class_name = self.model.names[class_id]
                             detections.append({
                                 "class": class_name,

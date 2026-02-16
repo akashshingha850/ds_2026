@@ -22,6 +22,7 @@ class Recorder(ZMQNode):
     def __init__(self):
         super().__init__('recorder')
         self.sub = self.context.socket(zmq.SUB)
+        self.sub.connect(f"tcp://localhost:{MOTION_FLAG_PORT}")
         self.sub.setsockopt_string(zmq.SUBSCRIBE, "")
         self.is_recording = False
 
@@ -70,25 +71,10 @@ class Recorder(ZMQNode):
             logging.info(f"Started recording on motion at {ts}")
 
     def run(self):
-        # Start discovery
+        # Start discovery if needed
         self.start_discovery()
 
-        # Wait for motion device to be discovered
-        motion_peer = None
-        while motion_peer is None:
-            for peer_id, peer_info in self.peers_info.items():
-                if peer_id.endswith("-motion"):
-                    motion_peer = peer_info
-                    break
-            if motion_peer is None:
-                print("[RECORDER] Waiting for motion device discovery...")
-                time.sleep(2)
-        
-        motion_endpoint = f"tcp://{motion_peer['ip']}:{MOTION_FLAG_PORT}"
-        self.sub.connect(motion_endpoint)
-        print(f"[RECORDER] Connected to {motion_endpoint}")
-
-        logging.info(f"[RECORDER:{self.node_id}] Listening on motion flags from {motion_peer['ip']}")
+        logging.info(f"[RECORDER:{self.node_id}] Listening on motion flags")
         logging.info(f"[RECORDER:{self.node_id}] Local IP: {self.get_local_ip()}")
 
         print(f"[RECORDER:{self.node_id}] Recorder started")

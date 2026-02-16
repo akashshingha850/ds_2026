@@ -1,4 +1,5 @@
 import socket
+import os
 import threading
 import time
 import json
@@ -15,9 +16,10 @@ from config import (
     DISCOVERY_PORT,
 )
 
-# Configure logging
+# Ensure logs directory exists and configure logging to hostname-specific file
+os.makedirs('logs', exist_ok=True)
 logging.basicConfig(
-    filename='log.log',
+    filename=f"logs/{socket.gethostname()}.log",
     level=logging.INFO,
     format='%(asctime)s - %(message)s'
 )
@@ -120,7 +122,7 @@ class ZMQNode:
         """
         # Give discovery thread time to do initial broadcast/receive
         logging.info(f"[Discovery:{self.node_id}] Waiting for peer with suffix '{suffix}'...")
-        time.sleep(3)
+        time.sleep(1)
         
         start_time = time.time()
         
