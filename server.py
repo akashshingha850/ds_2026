@@ -16,25 +16,39 @@ import plotly.graph_objects as go
 
 # Add parent directory to path to import config
 sys.path.append('.')
-
+from utils import ZMQNode
 # --- Backend: Data Collection (Cached Resource) ---
 @st.cache_resource
-class DataCollector:
+class DataCollector(ZMQNode):
     def __init__(self):
+        ZMQNode.__init__(self, 'server')
         self.data = deque(maxlen=60)
         self.lock = threading.Lock()
         self.running = True
         self.thread = threading.Thread(target=self._subscriber_thread, daemon=True)
+        self.discovery_thread = threading.Thread(target=self.discovery_loop, daemon=True)
         self.thread.start()
+        self.discovery_thread.start()
         print("DataCollector started")
 
     def _subscriber_thread(self):
         context = zmq.Context()
         socket = context.socket(zmq.SUB)
+        system_monitor_ip = None
+        while self.running and system_monitor_ip is None:
+            # Wait for discovery to find system_monitor
+            for peer_id, info in self.peers_info.items():
+                if 'system_monitor' in peer_id:
+                    system_monitor_ip = info['ip']
+                    break
+            if system_monitor_ip is None:
+                time.sleep(1)
+        if not self.running:
+            return
         try:
-            socket.connect(f"tcp://localhost:{SYSTEM_MONITOR_PORT}")
+            socket.connect(f"tcp://{system_monitor_ip}:{SYSTEM_MONITOR_PORT}")
             socket.setsockopt_string(zmq.SUBSCRIBE, "")
-            print(f"Listening on {SYSTEM_MONITOR_PORT}")
+            print(f"Listening on {system_monitor_ip}:{SYSTEM_MONITOR_PORT}")
             
             while self.running:
                 try:
@@ -48,6 +62,8 @@ class DataCollector:
         except Exception as e:
             print(f"Connection error: {e}")
         finally:
+            socket.close()
+            context.term()
             socket.close()
             context.term()
 
