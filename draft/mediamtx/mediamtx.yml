@@ -771,7 +771,7 @@ paths:
 
   stream:
     source: publisher
-    runOnInit: ffmpeg -loglevel quiet -f avfoundation -framerate 30 -video_size 640x480 -i "0" -c:v libx264 -preset fast -tune zerolatency -f rtsp rtsp://localhost:8554/stream
+    runOnInit: ffmpeg -loglevel quiet -f avfoundation -framerate 30 -video_size 1280x720 -i "0" -c:v libx264 -preset fast -tune zerolatency -f rtsp rtsp://localhost:8554/stream
     runOnInitRestart: yes
 
   # Settings under path "all_others" are applied to all paths that
