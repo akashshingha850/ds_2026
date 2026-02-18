@@ -72,7 +72,7 @@ class DataCollector(ZMQNode):
             df = pd.DataFrame(list(self.data[node_id]))
             if not df.empty and 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'], format='mixed')
-                df['numeric_gpu'] = df['gpu'].apply(lambda x: float(x.rstrip('%')) if isinstance(x, str) and x.endswith('%') and x != 'N/A' else float('nan'))
+                # Removed GPU column processing as 'gpu' is not present in the data
                 df['numeric_temp'] = df['temperature'].apply(lambda x: float(x.rstrip('°C')) if isinstance(x, str) and x.endswith('°C') and 'not available' not in x.lower() else float('nan'))
             return df
             
@@ -134,7 +134,7 @@ def run_dashboard():
                 fig = go.Figure()
                 fig.add_trace(go.Scatter(x=df['timestamp'], y=df['cpu'], name='CPU %'))
                 fig.add_trace(go.Scatter(x=df['timestamp'], y=df['memory_percent'], name='RAM %'))
-                fig.add_trace(go.Scatter(x=df['timestamp'], y=df['numeric_gpu'], name='GPU %'))
+                # Removed GPU plot as 'numeric_gpu' is not present in the data
                 fig.add_trace(go.Scatter(x=df['timestamp'], y=df['numeric_temp'], name='Temp °C'))
                 fig.update_layout(
                     yaxis=dict(title='Usage (%) / Temp (°C)', range=[0, 100]),
