@@ -2,7 +2,7 @@
 
 ## Overview
 
-`system_monitor.py` is a Python script that continuously monitors and logs system status information for a node in the distributed system. It extends the `ZMQNode` class from `utils.py` to provide peer discovery and ZeroMQ-based broadcasting of system metrics. The script collects metrics such as CPU usage, memory usage, disk I/O speeds, network I/O speeds, CPU temperature, and GPU usage percentage, then publishes them via ZeroMQ while also logging locally to both a file (`log.log`) and the console.
+`system_monitor.py` is a Python script that continuously monitors and logs system status information for a node in the distributed system. It extends the `ZMQNode` class from `utils.py` to provide peer discovery and ZeroMQ-based broadcasting of system metrics. The script collects metrics such as CPU usage, memory usage, disk I/O speeds, network I/O speeds, and CPU temperature, then publishes them via ZeroMQ while also logging locally to both a hostname-based file (`logs/<hostname>.log`) and the console.
 
 ## Features
 
@@ -11,7 +11,6 @@
 - **Disk I/O**: Read and write speeds in KB/s.
 - **Network I/O**: Send (upload) and receive (download) speeds in KB/s.
 - **CPU Temperature**: System temperature from available sensors.
-- **GPU Usage**: GPU utilization percentage (if available).
 - **ZeroMQ Broadcasting**: Publishes status data as JSON to subscribers.
 - **Peer Discovery**: Automatic discovery of other nodes on the network via UDP broadcast.
 
@@ -37,6 +36,30 @@ Configuration values from `config.py`:
 
 ## Usage
 
+### Run with Docker scripts (recommended)
+
+From the project root:
+
+```bash
+./build_system_monitor.sh
+./run_system_monitor.sh
+```
+
+The run script starts the container in detached mode with:
+- image name: `system_monitor`
+- container name: `system_monitor`
+- host networking: `--network host`
+- logs volume: `./logs:/app/logs`
+
+If a previous container exists with another name, stop and remove it before rerunning:
+
+```bash
+docker stop <old_container_name>
+docker rm <old_container_name>
+```
+
+### Run directly with Python
+
 Run the script with Python:
 
 ```bash
@@ -48,10 +71,10 @@ The script runs in an infinite loop, publishing and logging status updates every
 ## Output
 
 ### Local Logs
-Logs are written to `log.log` and console in the following format:
+Logs are written to `logs/<hostname>.log` and console in the following format:
 
 ```
-[timestamp] Node ID: hostname-system_monitor, CPU: x%, Memory: used/total GB (%), Disk R/W: read/write KB/s, Network U/D: send/recv KB/s, Temp: x°C, GPU: x%
+[timestamp] Node ID: hostname-system_monitor, CPU: x%, Memory: used/total GB (%), Disk R/W: read/write KB/s, Network U/D: send/recv KB/s, Temp: x°C
 ```
 
 ### ZeroMQ Published Data
@@ -70,8 +93,7 @@ Status data is published as JSON via ZeroMQ with the following structure:
   "disk_write_kbs": 67.89,
   "network_send_kbs": 45.67,
   "network_recv_kbs": 89.12,
-  "temperature": "55.0°C",
-  "gpu": "12.5%"
+  "temperature": "55.0°C"
 }
 ```
 
@@ -102,9 +124,6 @@ while True:
 - `get_network_status_static()`: Static network counters (not used in main loop).
 - `get_temperature_status()`: Fetches CPU temperature from sensors.
 - `get_speeds()`: Calculates disk and network I/O speeds over `SYSTEM_MONITOR_INTERVAL`.
-- `_find_gpu_stats_path()`: Locates GPU stats file in sysfs.
-- `_read_gpu_stats()`: Parses GPU stats from sysfs.
-- `_gpu_busy_percent()`: Calculates GPU utilization from runtime deltas.
 
 ### SystemMonitor Class
 - `__init__()`: Initializes ZMQNode, sets up publisher socket on `SYSTEM_MONITOR_PORT`.
@@ -113,8 +132,17 @@ while True:
 
 ## Notes
 
-- **GPU Monitoring**: GPU stats are read from `/sys/class/drm/renderD*/device/gpu_stats` if available (primarily for AMD GPUs on Linux). If unavailable, GPU shows "N/A".
 - **Temperature Sensors**: Uses `psutil.sensors_temperatures()`. If sensors are not available, temperature shows an error message.
 - **Discovery**: Inherits peer discovery from `ZMQNode`, broadcasting node presence on UDP port 50000.
 - **Raspberry Pi Specific**: Optimized for Raspberry Pi but works on any Linux system with appropriate sensors.
 - **Graceful Shutdown**: Handles Ctrl+C (KeyboardInterrupt) to close sockets and clean up resources.
+
+## Troubleshooting
+
+- **Docker API 500 / desktop socket error**: If `docker ps` shows an error containing `/home/.../.docker/desktop/docker.sock`, reset Docker host env:
+
+```bash
+unset DOCKER_HOST
+export DOCKER_HOST=unix:///var/run/docker.sock
+docker ps
+```

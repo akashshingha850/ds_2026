@@ -1,3 +1,4 @@
+
 import psutil
 import time
 from shared.config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT, DISCOVERY_PORT_SYSTEM
@@ -7,6 +8,27 @@ import logging
 import sys
 import zmq
 from shared.utils import ZMQNode
+
+# Override logging settings: logs/<hostname>-top-time(HH.MM.SS).log
+import os
+hostname = socket.gethostname()
+now = datetime.now().strftime('%H.%M.%S')
+log_filename = f"logs/{hostname}-htop-{now}.log"
+# Remove all handlers associated with the root logger object
+for handler in logging.root.handlers[:]:
+    logging.root.removeHandler(handler)
+os.makedirs('logs', exist_ok=True)
+logging.basicConfig(
+    filename=log_filename,
+    level=logging.INFO,
+    format='%(asctime)s - %(message)s'
+)
+# Add console handler again
+console = logging.StreamHandler()
+console.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(message)s')
+console.setFormatter(formatter)
+logging.getLogger('').addHandler(console)
 
 
 # Add parent directory to path to import config
