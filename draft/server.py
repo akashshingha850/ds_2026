@@ -36,22 +36,23 @@ class DataCollector(ZMQNode):
         socket = context.socket(zmq.SUB)
         socket.setsockopt_string(zmq.SUBSCRIBE, "")
         connected_ips = set()
-        
+        print("[DEBUG] Subscriber thread started.")
         while self.running:
             # Check for new system_monitor peers and connect
             for peer_id, info in list(self.peers_info.items()):
+                print(f"[DEBUG] Checking peer: {peer_id}, info: {info}")
                 if 'system_monitor' in peer_id and info['ip'] not in connected_ips:
                     try:
                         socket.connect(f"tcp://{info['ip']}:{SYSTEM_MONITOR_PORT}")
                         connected_ips.add(info['ip'])
-                        print(f"Connected to {info['ip']}:{SYSTEM_MONITOR_PORT}")
+                        print(f"[DEBUG] Connected to {info['ip']}:{SYSTEM_MONITOR_PORT}")
                     except Exception as e:
-                        print(f"Failed to connect to {info['ip']}: {e}")
-            
+                        print(f"[DEBUG] Failed to connect to {info['ip']}: {e}")
             # Receive messages
             try:
                 if socket.poll(1000):
                     msg = socket.recv_json()
+                    print(f"[DEBUG] Received message: {msg}")
                     node_id = msg.get('node_id')
                     if node_id:
                         with self.lock:
@@ -59,9 +60,8 @@ class DataCollector(ZMQNode):
                                 self.data[node_id] = deque(maxlen=60)
                             self.data[node_id].append(msg)
             except Exception as e:
-                print(f"Error accessing socket: {e}")
+                print(f"[DEBUG] Error accessing socket: {e}")
                 time.sleep(1)
-        
         socket.close()
         context.term()
 

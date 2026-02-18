@@ -31,11 +31,33 @@ logging.getLogger('').addHandler(console)
 
 class ZMQNode:
     def __init__(self, node_suffix, discovery_port=None):
-        self.node_id = f"{socket.gethostname()}-{node_suffix}"
+        # Use environment variables if set, else fallback
+        # Try to auto-detect real hostname and IP if running with --network host
+        try:
+            # Get hostname from /etc/hostname (host network mode)
+            with open('/etc/hostname', 'r') as f:
+                hostname_real = f.read().strip()
+        except Exception:
+            hostname_real = socket.gethostname()
+        self.node_id = f"{hostname_real}-{node_suffix}"
+
+        # Try to get real IP from host network
+        ip_env = os.environ.get('HOST_IP')
+        if ip_env:
+            self.local_ip = ip_env
+        else:
+            try:
+                # Use ip route to get default interface IP
+                import subprocess
+                ip = subprocess.check_output(['sh', '-c', "ip route get 1 | awk '{print $NF;exit}'"], encoding='utf-8').strip()
+                self.local_ip = ip
+            except Exception:
+                self.local_ip = self.get_local_ip()
         self.context = zmq.Context()
         self.peers_info = {}
         self.stop_event = threading.Event()
-        self.local_ip = self.get_local_ip()
+        ip_env = os.environ.get('HOST_IP')
+        self.local_ip = ip_env if ip_env else self.get_local_ip()
         # Calculate subnet broadcast assuming /24
         ip_parts = self.local_ip.split('.')
         if len(ip_parts) == 4:

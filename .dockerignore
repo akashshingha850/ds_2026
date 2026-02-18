@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.DS_Store
+*.pt
+*.onnx
+*.engine
+recordings/
+log.log
+draft/img/received_images
+draft/yolo/detections
+draft/requests/api_subscriber.log
+build/
+dist/
+.eggs/
+*.so

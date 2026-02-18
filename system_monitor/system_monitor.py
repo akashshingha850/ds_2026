@@ -1,12 +1,12 @@
 import psutil
 import time
-from config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT, DISCOVERY_PORT_SYSTEM
+from shared.config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT, DISCOVERY_PORT_SYSTEM
 from datetime import datetime
 import socket
 import logging
 import sys
 import zmq
-from utils import ZMQNode
+from shared.utils import ZMQNode
 
 
 # Add parent directory to path to import config
@@ -153,7 +153,7 @@ class SystemMonitor(ZMQNode):
         self.start_discovery()
 
         logging.info(f"[STATUS_PUB:{self.node_id}] Listening on tcp://*:{SYSTEM_MONITOR_PORT}")
-        logging.info(f"[PUB:{self.node_id}] Local IP: {self.get_local_ip()}")
+        logging.info(f"[PUB:{self.node_id}] Local IP: {self.local_ip}")
 
         logging.info("Starting system monitoring... Press Ctrl+C to stop.")
 
@@ -161,13 +161,13 @@ class SystemMonitor(ZMQNode):
             while True:
                 # Get speeds (includes sleep)
                 speeds = get_speeds()
-                
+
                 # Get other stats
                 cpu = psutil.cpu_percent(interval=0)
                 mem = get_memory_status()
                 temp = get_temperature_status()
                 ts = datetime.now().isoformat()
-                
+
                 # self.save_log(cpu, mem, speeds, temp, ts)
                 self.publish_status(speeds, cpu, mem, temp, ts)
 
