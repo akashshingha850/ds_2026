@@ -11,7 +11,7 @@ from datetime import datetime
 # Add parent directory to path to import config
 sys.path.append('.')
 
-from shared.config import (
+from config import (
     DISCOVERY_BROADCAST,
     DISCOVERY_PORT,
 )

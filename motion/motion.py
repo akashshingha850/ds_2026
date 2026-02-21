@@ -9,7 +9,7 @@ import logging
 from datetime import datetime
 
 # Add parent directory to path to import config
-sys.path.append('../.')
+sys.path.append('.')
 
 from config import (
     MOTION_FLAG_PORT,
