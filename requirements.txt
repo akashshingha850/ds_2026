@@ -1,6 +1,7 @@
+
 pyzmq
 ultralytics
-opencv-python
+opencv-python-headless
 Pillow
 ffmpeg-python
 psutil
@@ -9,4 +10,7 @@ numpy
 flask
 streamlit
 plotly
+torch
+torchvision
+pycocotools
 

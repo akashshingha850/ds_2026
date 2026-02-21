@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  motion:
+    build:
+      context: .
+      dockerfile: motion/Dockerfile
+    volumes:
+      - shared_data:/app/shared
+    networks:
+      - monitor_net
+    restart: unless-stopped
+
+  detection_coco:
+    build:
+      context: .
+      dockerfile: detection_coco/Dockerfile
+    volumes:
+      - shared_data:/app/shared
+    networks:
+      - monitor_net
+    restart: unless-stopped
+
+networks:
+  monitor_net:
+    driver: bridge
+
+volumes:
+  shared_data:
