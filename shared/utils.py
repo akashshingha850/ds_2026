@@ -8,6 +8,7 @@ import zmq
 import sys
 from datetime import datetime
 
+# aiuBSOIBO
 # Add parent directory to path to import config
 sys.path.append('.')
 
@@ -30,6 +31,42 @@ formatter = logging.Formatter('%(asctime)s - %(message)s')
 logging.getLogger('').addHandler(console)
 
 class ZMQNode:
+    def dynamic_peer_subscription(self, suffix, fallback_port, sub_socket, poll_timeout=1000, discovery_interval=30):
+        """
+        Periodically re-discover peer by suffix and switch subscription if peer changes.
+        Args:
+            suffix: Peer node_id suffix to discover (e.g., '-motion')
+            fallback_port: Port to use for localhost fallback
+            sub_socket: ZMQ SUB socket to manage connections
+            poll_timeout: Poll timeout in ms for receiving messages
+            discovery_interval: Seconds between peer re-discovery attempts
+        """
+        current_peer = None
+        current_endpoint = None
+        last_discovery_time = 0
+        while not self.stop_event.is_set():
+            now = time.time()
+            # Periodically re-discover peer
+            if (current_peer is None) or (now - last_discovery_time > discovery_interval):
+                if current_endpoint:
+                    sub_socket.disconnect(current_endpoint)
+                current_peer = self.discover_peer_by_suffix(
+                    suffix=suffix,
+                    timeout=10,
+                    fallback_to_localhost=True,
+                    fallback_port=fallback_port
+                )
+                last_discovery_time = now
+                if current_peer is None:
+                    print(f"[SUB] No peer with suffix '{suffix}' found, exiting")
+                    return None
+                current_endpoint = f"tcp://{current_peer['ip']}:{fallback_port}"
+                sub_socket.connect(current_endpoint)
+                print(f"[SUB] Connected to {current_endpoint}")
+            # Poll for messages
+            if sub_socket.poll(poll_timeout):
+                return sub_socket.recv_json()
+        return None
     def __init__(self, node_suffix, discovery_port=None):
         # Use environment variables if set, else fallback
         # Try to auto-detect real hostname and IP if running with --network host

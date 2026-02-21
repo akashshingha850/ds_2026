@@ -9,7 +9,13 @@ COPY detection_coco/requirements.txt /app/requirements.txt
 COPY shared/utils.py /app/utils.py
 COPY shared/config.py /app/config.py
 
-# Install dependencies
+
+# Install OpenCV system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	libglib2.0-0 libsm6 libxext6 libxrender-dev libxcb1 libgl1 \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
 RUN pip install --upgrade pip && \
 	pip install --no-cache-dir -r /app/requirements.txt && \
 	rm -rf /root/.cache /root/.config

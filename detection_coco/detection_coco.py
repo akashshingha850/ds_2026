@@ -11,6 +11,7 @@ import numpy as np
 import zmq
 import sys
 from ultralytics import YOLO
+from utils import ZMQNode
 
 # Add parent directory to path to import config
 sys.path.append('.')
@@ -21,7 +22,7 @@ from config import (
     YOLO_COCO_CONFIDENCE,
     DISCOVERY_PORT_DETECTION,
 )
-from utils import ZMQNode
+
 
 class DetectionProcessor(ZMQNode):
     def __init__(self, model_path):
@@ -68,74 +69,49 @@ class DetectionProcessor(ZMQNode):
         logging.info(f"Detection results published: {detections}")
 
     def subscriber_loop(self):
-        # Discover motion device (remote or localhost fallback)
-        motion_peer = self.discover_peer_by_suffix(
-            suffix='-motion',
-            timeout=10,
-            fallback_to_localhost=True,
-            fallback_port=MOTION_IMAGE_PORT
-        )
-        
-        if motion_peer is None:
-            print("[SUB] No motion device found, exiting")
-            return
-            
-        motion_endpoint = f"tcp://{motion_peer['ip']}:{MOTION_IMAGE_PORT}"
-        self.sub_socket.connect(motion_endpoint)
-        print(f"[SUB] Connected to {motion_endpoint}")
-
         while not self.stop_event.is_set():
-            try:
-                if self.sub_socket.poll(1000):
-                    recv_ts = datetime.now().isoformat()
-                    message = self.sub_socket.recv_json()
-                    if message.get("type") != "image":
-                        continue
-
-                    image_b64 = message.get("image_data")
-                    sender = message.get("node_id", "unknown")
-                    if not image_b64:
-                        continue
-
-                    jpeg_bytes = base64.b64decode(image_b64)
-                    frame = cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
-                    if frame is None:
-                        print("[SUB] Failed to decode image")
-                        continue
-
-                    self.image_count += 1
-                    results = self.run_inference(frame)
-                    detection_ts = datetime.now().isoformat()
-
-                    # Optional: uncomment to save each annotated result image
-                    # self.save_image(results, sender, detection_ts)
-
-                    print(f"[SUB] Inference #{self.image_count} from {sender}")
-
-                    # Prepare detection results
-                    detections = []
-                    for result in results:
-                        for box in result.boxes:
-                            class_id = int(box.cls)
-                            confidence = round(float(box.conf), 2)
-                            class_name = self.model.names[class_id]
-                            detections.append({
-                                "class": class_name,
-                                "confidence": confidence
-                            })
-
-                    send_ts = message.get("ts", "unknown")
-                    logging.info(f"{self.node_id} recieved image from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} - Results: {len(detections)} detections")
-
-                    # Publish detection results
-                    self.publish_detection_results(detections, detection_ts, sender)
-
-            except zmq.error.ContextTerminated:
+            message = self.dynamic_peer_subscription(
+                suffix='-motion',
+                fallback_port=MOTION_IMAGE_PORT,
+                sub_socket=self.sub_socket,
+                poll_timeout=1000,
+                discovery_interval=30
+            )
+            if message is None:
                 break
-            except Exception as e:
-                if not self.stop_event.is_set():
-                    print(f"[SUB] Error: {e}")
-
+            recv_ts = datetime.now().isoformat()
+            if message.get("type") != "image":
+                continue
+            image_b64 = message.get("image_data")
+            sender = message.get("node_id", "unknown")
+            if not image_b64:
+                continue
+            jpeg_bytes = base64.b64decode(image_b64)
+            frame = cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if frame is None:
+                print("[SUB] Failed to decode image")
+                continue
+            self.image_count += 1
+            results = self.run_inference(frame)
+            detection_ts = datetime.now().isoformat()
+            # Optional: uncomment to save each annotated result image
+            # self.save_image(results, sender, detection_ts)
+            print(f"[SUB] Inference #{self.image_count} from {sender}")
+            # Prepare detection results
+            detections = []
+            for result in results:
+                for box in result.boxes:
+                    class_id = int(box.cls)
+                    confidence = round(float(box.conf), 2)
+                    class_name = self.model.names[class_id]
+                    detections.append({
+                        "class": class_name,
+                        "confidence": confidence
+                    })
+            send_ts = message.get("ts", "unknown")
+            logging.info(f"{self.node_id} recieved image from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} - Results: {len(detections)} detections")
+            # Publish detection results
+            self.publish_detection_results(detections, detection_ts, sender)
         self.sub_socket.close()
 
     def run(self):
