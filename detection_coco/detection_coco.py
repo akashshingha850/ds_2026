@@ -18,7 +18,6 @@ sys.path.append('.')
 from config import (
     MOTION_IMAGE_PORT,
     DETECTION_COCO_PORT,
-    YOLO_COCO_PATH,
     YOLO_COCO_CONFIDENCE,
     DISCOVERY_PORT_DETECTION,
 )
@@ -164,8 +163,8 @@ class DetectionProcessor(ZMQNode):
             self.cleanup()
 
 if __name__ == "__main__":
-    # Model path - NCNN model in root dir
-    model_path = YOLO_COCO_PATH
+    # Hardcoded model path
+    model_path = "detection_coco/yolo26n_ncnn_model/model.ncnn.bin"
 
     processor = DetectionProcessor(model_path)
     processor.run()

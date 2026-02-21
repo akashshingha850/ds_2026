@@ -32,7 +32,7 @@ DISCOVERY_PORT_MOTION = 50000  # Shared with detection for cross-device discover
 # DETECTION (YOLO)
 # -----------------------------------------------------------------------------
 DETECTION_COCO_PORT = 5558
-YOLO_COCO_PATH = "detection_models/yolo26n_ncnn_model"  # NCNN model path
+YOLO_COCO_PATH = "detection_coco/yolo26n_ncnn_model"  # NCNN model path
 YOLO_COCO_CONFIDENCE = 0.5  # Confidence threshold for YOLO COCO
 
 DETECTION_WPN_PORT = 5559
