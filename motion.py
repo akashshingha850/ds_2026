@@ -31,11 +31,20 @@ from utils import ZMQNode
 
 def get_video_dimensions(url):
     """Probe the video stream and return width and height."""
-    probe = ffmpeg.probe(MOTION_URL)
-    video_info = next(s for s in probe['streams'] if s['codec_type'] == 'video')
-    width = int(video_info['width'])
-    height = int(video_info['height'])
-    return width, height
+    retry_delay = 5  # seconds
+    attempt = 1
+    while True:
+        try:
+            probe = ffmpeg.probe(MOTION_URL)
+            video_info = next(s for s in probe['streams'] if s['codec_type'] == 'video')
+            width = int(video_info['width'])
+            height = int(video_info['height'])
+            return width, height
+        except ffmpeg.Error as e:
+            print(f"ffmpeg.probe failed (attempt {attempt}): {e}")
+            print("Retrying in {} seconds...".format(retry_delay))
+            time.sleep(retry_delay)
+            attempt += 1
 
 class MotionDetector(ZMQNode):
     def __init__(self):
@@ -113,8 +122,9 @@ class MotionDetector(ZMQNode):
                 in_bytes = process.stdout.read(bytes_per_frame)
                 
                 if len(in_bytes) != bytes_per_frame:
-                    logging.warning("Incomplete frame received. Try again...")
-                    break
+                    logging.warning("Incomplete frame received. Waiting 2 seconds and retrying...")
+                    time.sleep(2)
+                    continue
                 
                 frame = np.frombuffer(in_bytes, np.uint8).reshape((height, width, 3))
 
