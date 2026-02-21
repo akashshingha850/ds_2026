@@ -769,10 +769,26 @@ paths:
   # my_camera:
   #   source: rtsp://my_camera
 
-  stream:
+  # stream:
+  #   source: publisher
+  #   runOnInit: ffmpeg -loglevel quiet -f avfoundation -framerate 30 -video_size 1280x720 -i "0" -c:v libx264 -preset fast -tune zerolatency -f rtsp rtsp://localhost:8554/stream
+  #   runOnInitRestart: yes
+
+  playback:
     source: publisher
-    runOnInit: ffmpeg -loglevel quiet -f avfoundation -framerate 30 -video_size 1280x720 -i "0" -c:v libx264 -preset fast -tune zerolatency -f rtsp rtsp://localhost:8554/stream
-    runOnInitRestart: yes
+    # Allow another client to disconnect the current publisher and publish in its place
+    overridePublisher: yes
+    # Optionally, set maxReaders to limit concurrent viewers (0 = unlimited)
+    maxReaders: 0
+    # Optionally, enable always-available mode to loop an offline segment when no publisher is present
+    alwaysAvailable: true
+    # Optionally, set allowed protocols for ingest/playback (RTSP, RTMP, HLS, WebRTC, SRT)
+    # By default, all enabled protocols in global config are allowed
+    # Example: protocols: [rtsp, rtmp, hls, webrtc, srt]
+    # protocols: [rtsp, hls]
+    # No authentication required unless specified in global config
+    # To publish: use FFmpeg or other publisher to send stream to rtsp://<server>:8554/playback
+    # To play: connect client (VLC, ffplay, etc.) to rtsp://<server>:8554/playback or hls://<server>:8888/playback
 
   # Settings under path "all_others" are applied to all paths that
   # do not match another entry.
