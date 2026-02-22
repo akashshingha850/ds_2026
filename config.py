@@ -16,8 +16,8 @@ DISCOVERY_PORT = 50000  # Default discovery port (fallback)
 # -----------------------------------------------------------------------------
 MOTION_FLAG_PORT = 5556
 MOTION_IMAGE_PORT = 5557
-# MOTION_URL = 'rtsp://192.168.144.25:8554/main.264'  # SIYI Camera RTSP URL
-MOTION_URL = 'rtsp://127.0.0.1:8554/playback' # Localhost RTSP URL for testing on MacBook
+MOTION_URL = 'rtsp://192.168.144.25:8554/main.264'  # SIYI Camera RTSP URL
+# MOTION_URL = 'rtsp://127.0.0.1:8554/playback' # Localhost RTSP URL for testing on MacBook
 # MOTION_URL = 'rtsp://172.20.10.2:31555/nvstream/opt/store/nvstreamer_videos/ccfootage.mp4' # Local RTSP URL for testing on Jetson Nano with local video file
 
 
@@ -59,3 +59,43 @@ DISCOVERY_PORT_SYSTEM = 50001  # Dedicated discovery port for system_monitor nod
 # -----------------------------------------------------------------------------
 RECORD_DURATION = 15  # seconds
 RECORD_FPS = 10
+
+
+# -----------------------------------------------------------------------------
+# ALERTING (API SERVER)
+# -----------------------------------------------------------------------------
+ALERTS_ENABLED = True
+
+# Trigger and filtering
+ALERT_REQUIRE_MOTION_FLAG = True
+ALERT_REQUIRE_DETECTIONS = True
+ALERT_MIN_CONFIDENCE = 0.5
+ALERT_CLASS_WHITELIST = []  # Empty means all classes
+
+# Anti-spam
+ALERT_COOLDOWN_SECONDS = 60
+ALERT_DIGEST_WINDOW_SECONDS = 60
+ALERT_NEW_OBJECT_ONLY = True
+ALERT_OBJECT_INACTIVE_SECONDS = 30  # Consider class "new" again only after this many seconds unseen
+
+# Hybrid strategy: immediate for critical classes, digest for others
+ALERT_IMMEDIATE_CLASSES = ["weapon", "fire"]
+ALERT_FIRST_HIT_IMMEDIATE = True  # Send first accepted detection immediately for any class
+ALERT_EXCLUDED_NODE_PREFIXES = ["smtp-", "live-email-test"]  # Prevent test/synthetic node IDs from sending alerts
+
+# SMTP settings
+ALERT_SMTP_ENABLED = True
+ALERT_SMTP_HOST = "smtp.gmail.com"
+ALERT_SMTP_PORT = 587
+ALERT_SMTP_USERNAME = "moinulislam7002@gmail.com"
+ALERT_SMTP_PASSWORD = "zdxemtdjrosxdxbl"
+ALERT_SMTP_FROM = "moinulislam7002@gmail.com"
+ALERT_SMTP_TO = ["akashshingha584@gmail.com"]
+ALERT_SMTP_ATTACH_IMAGE = True
+
+# Webhook settings
+ALERT_WEBHOOK_ENABLED = False
+ALERT_WEBHOOK_URL = ""
+
+# Test mode: evaluates alert logic and logs what would be sent without network delivery
+ALERT_DRY_RUN = False
