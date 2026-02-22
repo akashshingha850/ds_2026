@@ -31,7 +31,7 @@ formatter = logging.Formatter('%(asctime)s - %(message)s')
 logging.getLogger('').addHandler(console)
 
 class ZMQNode:
-    def dynamic_peer_subscription(self, suffix, fallback_port, sub_socket, poll_timeout=1000, discovery_interval=30):
+    def dynamic_peer_subscription(self, suffix, fallback_port, sub_socket, poll_timeout=1000, discovery_interval=30, fallback_host="localhost"):
         """
         Periodically re-discover peer by suffix and switch subscription if peer changes.
         Args:
@@ -54,13 +54,16 @@ class ZMQNode:
                     suffix=suffix,
                     timeout=10,
                     fallback_to_localhost=True,
-                    fallback_port=fallback_port
+                    fallback_port=fallback_port,
+                    fallback_host=fallback_host
                 )
                 last_discovery_time = now
                 if current_peer is None:
                     print(f"[SUB] No peer with suffix '{suffix}' found, exiting")
                     return None
-                current_endpoint = f"tcp://{current_peer['ip']}:{fallback_port}"
+                peer_ip = current_peer.get('ip', fallback_host)
+                peer_port = current_peer.get('port', fallback_port)
+                current_endpoint = f"tcp://{peer_ip}:{peer_port}"
                 sub_socket.connect(current_endpoint)
                 print(f"[SUB] Connected to {current_endpoint}")
             # Poll for messages
@@ -79,17 +82,6 @@ class ZMQNode:
         self.node_id = f"{hostname_real}-{node_suffix}"
 
         # Try to get real IP from host network
-        ip_env = os.environ.get('HOST_IP')
-        if ip_env:
-            self.local_ip = ip_env
-        else:
-            try:
-                # Use ip route to get default interface IP
-                import subprocess
-                ip = subprocess.check_output(['sh', '-c', "ip route get 1 | awk '{print $NF;exit}'"], encoding='utf-8').strip()
-                self.local_ip = ip
-            except Exception:
-                self.local_ip = self.get_local_ip()
         self.context = zmq.Context()
         self.peers_info = {}
         self.stop_event = threading.Event()
@@ -166,7 +158,7 @@ class ZMQNode:
 
         sock.close()
 
-    def discover_peer_by_suffix(self, suffix, timeout=30, fallback_to_localhost=False, fallback_port=0):
+    def discover_peer_by_suffix(self, suffix, timeout=30, fallback_to_localhost=False, fallback_port=0, fallback_host="localhost"):
         """
         Discover a peer by node_id suffix (e.g., '-motion', '-system_monitor').
         
@@ -196,8 +188,8 @@ class ZMQNode:
             elapsed = time.time() - start_time
             if elapsed > timeout:
                 if fallback_to_localhost:
-                    logging.info(f"[Discovery:{self.node_id}] No remote peer found, using localhost")
-                    return {'ip': 'localhost', 'port': fallback_port}
+                    logging.info(f"[Discovery:{self.node_id}] No remote peer found, using {fallback_host}")
+                    return {'ip': fallback_host, 'port': fallback_port}
                 else:
                     logging.warning(f"[Discovery:{self.node_id}] No peer with suffix '{suffix}' found after {timeout}s")
                     return None

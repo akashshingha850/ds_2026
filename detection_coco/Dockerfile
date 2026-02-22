@@ -22,8 +22,8 @@ RUN pip install --upgrade pip && \
 # Copy main script
 COPY detection_coco/detection_coco.py /app/detection_coco.py
 
-# Copy only the required model file
-COPY detection_coco/yolo26n_ncnn_model/model.ncnn.bin /app/detection_coco/yolo26n_ncnn_model/model.ncnn.bin
+# Copy NCNN model directory (.bin, .param, metadata)
+COPY detection_coco/yolo26n_ncnn_model/ /app/detection_coco/yolo26n_ncnn_model/
 
 # (Optional) Clean up __pycache__
 RUN find /app -type d -name '__pycache__' -exec rm -r {} + || true

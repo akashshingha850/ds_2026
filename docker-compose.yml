@@ -7,6 +7,12 @@ services:
       - shared_data:/app/shared
     networks:
       - monitor_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 5557)); s.close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   detection_coco:
@@ -15,8 +21,13 @@ services:
       dockerfile: detection_coco/Dockerfile
     volumes:
       - shared_data:/app/shared
+    environment:
+      - MOTION_HOST=motion
     networks:
       - monitor_net
+    depends_on:
+      motion:
+        condition: service_healthy
     restart: unless-stopped
 
 networks:

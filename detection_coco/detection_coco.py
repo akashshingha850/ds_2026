@@ -69,10 +69,12 @@ class DetectionProcessor(ZMQNode):
         logging.info(f"Detection results published: {detections}")
 
     def subscriber_loop(self):
+        motion_host_fallback = os.environ.get("MOTION_HOST", "motion")
         while not self.stop_event.is_set():
             message = self.dynamic_peer_subscription(
                 suffix='-motion',
                 fallback_port=MOTION_IMAGE_PORT,
+                fallback_host=motion_host_fallback,
                 sub_socket=self.sub_socket,
                 poll_timeout=1000,
                 discovery_interval=30
