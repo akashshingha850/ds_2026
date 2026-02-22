@@ -17,8 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python dependencies
 RUN pip install --upgrade pip && \
-	pip install --no-cache-dir -r /app/requirements.txt && \
-	rm -rf /root/.cache /root/.config
+	pip install -r /app/requirements.txt
 
 # Copy main script
 COPY detection_coco/detection_coco.py /app/detection_coco.py
