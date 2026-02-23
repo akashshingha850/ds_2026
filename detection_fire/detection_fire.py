@@ -18,16 +18,16 @@ sys.path.append('.')
 
 from config import (
     MOTION_IMAGE_PORT,
-    DETECTION_COCO_PORT,
-    YOLO_COCO_CONFIDENCE,
+    DETECTION_FIRE_PORT,
+    YOLO_FIRE_CONFIDENCE,
     DISCOVERY_PORT_DETECTION,
 )
 
 
 class DetectionProcessor(ZMQNode):
     def __init__(self, model_path):
-        super().__init__('detection_coco', discovery_port=DISCOVERY_PORT_DETECTION)
-        self.pub_port = DETECTION_COCO_PORT
+        super().__init__('detection_fire', discovery_port=DISCOVERY_PORT_DETECTION)
+        self.pub_port = DETECTION_FIRE_PORT
         self.model_path = model_path
         self.model = self.load_model()
         self.sub_socket = self.context.socket(zmq.SUB)
@@ -36,7 +36,7 @@ class DetectionProcessor(ZMQNode):
         self.sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
         self.det_pub = self.context.socket(zmq.PUB)
         self.det_pub.setsockopt(zmq.SNDHWM, int(os.environ.get("DET_PUB_SND_HWM", "5000")))
-        self.det_pub.bind(f"tcp://*:{DETECTION_COCO_PORT}")
+        self.det_pub.bind(f"tcp://*:{DETECTION_FIRE_PORT}")
         self.image_count = 0
 
     def _compute_queue_age_seconds(self, send_ts, recv_ts_iso):
@@ -61,7 +61,7 @@ class DetectionProcessor(ZMQNode):
 
     def run_inference(self, image):
         """Run inference on the image using the model."""
-        return self.model(image, conf=YOLO_COCO_CONFIDENCE)
+        return self.model(image, conf=YOLO_FIRE_CONFIDENCE)
 
     def save_image(self, results, sender, timestamp):
         """Save YOLO-annotated result image to disk."""
@@ -85,7 +85,7 @@ class DetectionProcessor(ZMQNode):
             "ts": timestamp,
         }
         self.det_pub.send_json(message)
-        logging.info(f"Detection results published: {detections}")
+        logging.info(f"Image #{self.image_count} results published: {detections}")
 
     def subscriber_loop(self):
         motion_host_fallback = os.environ.get("MOTION_HOST", "motion")
@@ -105,6 +105,7 @@ class DetectionProcessor(ZMQNode):
                 continue
             image_b64 = message.get("image_data")
             sender = message.get("node_id", "unknown")
+            image_id = message.get("image_id", None)
             if not image_b64:
                 continue
             decode_start = time.perf_counter()
@@ -119,9 +120,7 @@ class DetectionProcessor(ZMQNode):
             results = self.run_inference(frame)
             inference_ms = (time.perf_counter() - inference_start) * 1000
             detection_ts = datetime.now().isoformat()
-            # Optional: uncomment to save each annotated result image
-            # self.save_image(results, sender, detection_ts)
-            print(f"[SUB] Inference #{self.image_count} from {sender}")
+            print(f"[SUB] #{self.image_count} recieved from {sender}")
             # Prepare detection results
             detections = []
             for result in results:
@@ -137,7 +136,7 @@ class DetectionProcessor(ZMQNode):
             queue_age_s = self._compute_queue_age_seconds(send_ts, recv_ts)
             queue_age_text = f"{queue_age_s:.3f}s" if queue_age_s is not None else "unknown"
             logging.info(
-                f"{self.node_id} recieved image from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} "
+                f"{self.node_id} recieved image #{self.image_count} from {sender} (image_id={image_id}) - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} "
                 f"- Queue Age: {queue_age_text} - Decode: {decode_ms:.2f}ms - Inference: {inference_ms:.2f}ms - Results: {len(detections)} detections"
             )
             # Publish detection results
@@ -155,7 +154,7 @@ class DetectionProcessor(ZMQNode):
         sub_thread = threading.Thread(target=self.subscriber_loop, daemon=True)
         sub_thread.start()
 
-        logging.info(f"[DET_PUB:{self.node_id}] Listening on tcp://*:{DETECTION_COCO_PORT}")
+        logging.info(f"[DET_PUB:{self.node_id}] Listening on tcp://*:{DETECTION_FIRE_PORT}")
         logging.info(f"[SUB:{self.node_id}] Discovering motion devices...")
         logging.info(f"[PUB:{self.node_id}] Local IP: {self.get_local_ip()}")
 
@@ -173,7 +172,7 @@ class DetectionProcessor(ZMQNode):
 
 if __name__ == "__main__":
     # Hardcoded model path
-    model_path = "detection_coco/yolo_fire_ncnn_model"
+    model_path = "detection_fire/yolo_fire_ncnn_model"
 
     processor = DetectionProcessor(model_path)
     processor.run()

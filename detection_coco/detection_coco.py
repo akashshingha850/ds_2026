@@ -85,7 +85,7 @@ class DetectionProcessor(ZMQNode):
             "ts": timestamp,
         }
         self.det_pub.send_json(message)
-        logging.info(f"Detection results published: {detections}")
+        logging.info(f"Image #{self.image_count} results published: {detections}")
 
     def subscriber_loop(self):
         motion_host_fallback = os.environ.get("MOTION_HOST", "motion")
@@ -105,6 +105,7 @@ class DetectionProcessor(ZMQNode):
                 continue
             image_b64 = message.get("image_data")
             sender = message.get("node_id", "unknown")
+            image_id = message.get("image_id", None)
             if not image_b64:
                 continue
             decode_start = time.perf_counter()
@@ -119,9 +120,7 @@ class DetectionProcessor(ZMQNode):
             results = self.run_inference(frame)
             inference_ms = (time.perf_counter() - inference_start) * 1000
             detection_ts = datetime.now().isoformat()
-            # Optional: uncomment to save each annotated result image
-            # self.save_image(results, sender, detection_ts)
-            print(f"[SUB] Inference #{self.image_count} from {sender}")
+            print(f"[SUB] #{self.image_count} recieved from {sender} (image_id={image_id})")
             # Prepare detection results
             detections = []
             for result in results:
@@ -137,7 +136,7 @@ class DetectionProcessor(ZMQNode):
             queue_age_s = self._compute_queue_age_seconds(send_ts, recv_ts)
             queue_age_text = f"{queue_age_s:.3f}s" if queue_age_s is not None else "unknown"
             logging.info(
-                f"{self.node_id} recieved image from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} "
+                f"{self.node_id} recieved image #{self.image_count} from {sender} (image_id={image_id}) - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} "
                 f"- Queue Age: {queue_age_text} - Decode: {decode_ms:.2f}ms - Inference: {inference_ms:.2f}ms - Results: {len(detections)} detections"
             )
             # Publish detection results

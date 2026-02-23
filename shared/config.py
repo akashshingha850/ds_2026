@@ -33,15 +33,13 @@ DISCOVERY_PORT_MOTION = 50000  # Shared with detection for cross-device discover
 # DETECTION (YOLO)
 # -----------------------------------------------------------------------------
 DETECTION_COCO_PORT = 5558
-YOLO_COCO_PATH = "detection_models/yolo26n_ncnn_model"  # NCNN model path
 YOLO_COCO_CONFIDENCE = 0.5  # Confidence threshold for YOLO COCO
 
-DETECTION_WPN_PORT = 5559
-YOLO_WPN_PATH = "detection_models/yolo_weapon_ncnn_model"  # WPN model path
-YOLO_WPN_CONFIDENCE = 0.5  # Confidence threshold for YOLO WPN
+# DETECTION_WPN_PORT = 5559
+# YOLO_WPN_PATH = "detection_models/yolo_weapon_ncnn_model"  # WPN model path
+# YOLO_WPN_CONFIDENCE = 0.5  # Confidence threshold for YOLO WPN
 
-DETECTION_FIRE_PORT = 5560
-YOLO_FIRE_PATH = "detection_models/yolo_fire_ncnn_model"  # FIRE model path
+DETECTION_FIRE_PORT = 5559
 YOLO_FIRE_CONFIDENCE = 0.5  # Confidence threshold for YOLO FIRE
 
 DISCOVERY_PORT_DETECTION = 50000  # Dedicated discovery port for detection nodes
@@ -50,7 +48,7 @@ DISCOVERY_PORT_DETECTION = 50000  # Dedicated discovery port for detection nodes
 # SYSTEM MONITOR
 # -----------------------------------------------------------------------------
 SYSTEM_MONITOR_INTERVAL = 1  # seconds
-SYSTEM_MONITOR_PORT = 5599
+SYSTEM_MONITOR_PORT = 5560
 # SYSTEM_MONITOR_IP = "localhost"  # For server.py connection (if needed)
 DISCOVERY_PORT_SYSTEM = 50001  # Dedicated discovery port for system_monitor nodes
 

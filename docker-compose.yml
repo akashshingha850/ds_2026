@@ -25,8 +25,21 @@ services:
       - shared_data:/app/shared
       - ./logs:/app/logs
       - /etc/hostname:/host_hostname:ro
-    environment:
-      - MOTION_HOST=motion
+    networks:
+      - eyes_edge_net
+    # depends_on:
+      # motion:
+        # condition: service_healthy
+    restart: unless-stopped
+
+  detection_fire:
+    build:
+      context: .
+      dockerfile: detection_fire/Dockerfile
+    volumes:
+      - shared_data:/app/shared
+      - ./logs:/app/logs
+      - /etc/hostname:/host_hostname:ro
     networks:
       - eyes_edge_net
     # depends_on:
@@ -35,6 +48,7 @@ services:
     restart: unless-stopped
     
 
+    
 networks:
   eyes_edge_net:
     driver: bridge

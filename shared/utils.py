@@ -43,13 +43,20 @@ device_hostname = resolve_device_hostname()
 logging.basicConfig(
     filename=f"logs/{device_hostname}.log",
     level=logging.INFO,
-    format='%(asctime)s - %(message)s'
+    format='%(asctime)s - %(message)s',
+    force=True,
 )
 # Add console handler
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(message)s')
-logging.getLogger('').addHandler(console)
+root_logger = logging.getLogger('')
+has_stream_handler = any(
+    isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler)
+    for handler in root_logger.handlers
+)
+if not has_stream_handler:
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    console.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+    root_logger.addHandler(console)
 
 class ZMQNode:
     def dynamic_peer_subscription(self, suffix, fallback_port, sub_socket, poll_timeout=1000, discovery_interval=30, fallback_host="localhost"):

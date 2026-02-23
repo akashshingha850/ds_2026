@@ -55,6 +55,7 @@ class MotionDetector(ZMQNode):
         self.image_pub.bind(f"tcp://*:{MOTION_IMAGE_PORT}")
         self.prev_blurred_frame = None
         self.last_motion_state = 0
+        self.image_id = 1  # Incremental image ID
 
     def gaussian_blur(self, image, kernel_size, sigma):
         return cv2.GaussianBlur(image, (kernel_size, kernel_size), sigma)
@@ -89,9 +90,11 @@ class MotionDetector(ZMQNode):
                 "size": f"{image_size_kb:.2f} KB",
                 "image_data": image_b64,
                 "ts": timestamp,
+                "image_id": self.image_id,
             }
             self.image_pub.send_json(message)
-            logging.info(f"{self.node_id} triggered motion event at {timestamp} and published image ({image_size_kb:.2f} KB)")
+            logging.info(f"{self.node_id} triggered motion event at {timestamp} and published image #{self.image_id}, ({image_size_kb:.2f} KB)")
+            self.image_id += 1
         else:
             logging.error("Failed to encode image")
 
