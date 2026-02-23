@@ -2,6 +2,10 @@
 
 Simple test to verify ZeroMQ communication between gateway and 3 edge devices.
 
+## Docker hostname and logs
+
+When running via Docker Compose, each service mounts the host `/etc/hostname` file as `/host_hostname` (read-only). The shared logger uses this value for the log filename, so logs are grouped per device (for example: `logs/my-pi-hostname.log`) without hardcoding environment variables.
+
 ## Setup
 
 ### 1. Install ZeroMQ on all Raspberry Pis

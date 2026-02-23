@@ -1,14 +1,12 @@
 services:
   motion:
-    hostname: ${HOSTNAME}
     build:
       context: .
       dockerfile: motion/Dockerfile
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
-    environment:
-      - HOST_HOSTNAME=${HOST_HOSTNAME}
+      - /etc/hostname:/host_hostname:ro
     networks:
       - eyes_edge_net
     # healthcheck:
@@ -20,22 +18,22 @@ services:
     restart: unless-stopped
 
   detection_coco:
-    hostname: ${HOSTNAME}
     build:
       context: .
       dockerfile: detection_coco/Dockerfile
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
+      - /etc/hostname:/host_hostname:ro
     environment:
       - MOTION_HOST=motion
-      - HOST_HOSTNAME=${HOST_HOSTNAME}
     networks:
       - eyes_edge_net
     # depends_on:
       # motion:
         # condition: service_healthy
     restart: unless-stopped
+    
 
 networks:
   eyes_edge_net:

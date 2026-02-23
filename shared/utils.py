@@ -17,10 +17,31 @@ from config import (
     DISCOVERY_PORT,
 )
 
+
+def resolve_device_hostname():
+    try:
+        with open('/host_hostname', 'r') as f:
+            host_name = f.read().strip()
+            if host_name:
+                return host_name
+    except Exception:
+        pass
+
+    try:
+        with open('/etc/hostname', 'r') as f:
+            host_name = f.read().strip()
+            if host_name:
+                return host_name
+    except Exception:
+        pass
+
+    return socket.gethostname()
+
 # Ensure logs directory exists and configure logging to hostname-specific file
 os.makedirs('logs', exist_ok=True)
+device_hostname = resolve_device_hostname()
 logging.basicConfig(
-    filename=f"logs/{socket.gethostname()}.log",
+    filename=f"logs/{device_hostname}.log",
     level=logging.INFO,
     format='%(asctime)s - %(message)s'
 )
@@ -41,45 +62,53 @@ class ZMQNode:
             poll_timeout: Poll timeout in ms for receiving messages
             discovery_interval: Seconds between peer re-discovery attempts
         """
-        current_peer = None
-        current_endpoint = None
-        last_discovery_time = 0
-        while not self.stop_event.is_set():
-            now = time.time()
-            # Periodically re-discover peer
-            if (current_peer is None) or (now - last_discovery_time > discovery_interval):
-                if current_endpoint:
-                    sub_socket.disconnect(current_endpoint)
-                current_peer = self.discover_peer_by_suffix(
-                    suffix=suffix,
-                    timeout=10,
-                    fallback_to_localhost=True,
-                    fallback_port=fallback_port,
-                    fallback_host=fallback_host
-                )
-                last_discovery_time = now
-                if current_peer is None:
-                    print(f"[SUB] No peer with suffix '{suffix}' found, exiting")
-                    return None
-                peer_ip = current_peer.get('ip', fallback_host)
-                peer_port = current_peer.get('port', fallback_port)
-                current_endpoint = f"tcp://{peer_ip}:{peer_port}"
-                sub_socket.connect(current_endpoint)
-                print(f"[SUB] Connected to {current_endpoint}")
-            # Poll for messages
-            if sub_socket.poll(poll_timeout):
-                return sub_socket.recv_json()
+        if not hasattr(self, "_dynamic_sub_state"):
+            self._dynamic_sub_state = {}
+
+        state_key = (id(sub_socket), suffix, fallback_port, fallback_host)
+        state = self._dynamic_sub_state.get(state_key)
+        if state is None:
+            state = {
+                "current_peer": None,
+                "current_endpoint": None,
+                "last_discovery_time": 0.0,
+            }
+            self._dynamic_sub_state[state_key] = state
+
+        now = time.time()
+        if (state["current_peer"] is None) or (now - state["last_discovery_time"] > discovery_interval):
+            discovery_timeout = 10 if state["current_peer"] is None else 1
+            discovered_peer = self.discover_peer_by_suffix(
+                suffix=suffix,
+                timeout=discovery_timeout,
+                fallback_to_localhost=True,
+                fallback_port=fallback_port,
+                fallback_host=fallback_host
+            )
+            state["last_discovery_time"] = now
+
+            if discovered_peer is None:
+                print(f"[SUB] No peer with suffix '{suffix}' found")
+                return None
+
+            peer_ip = discovered_peer.get('ip', fallback_host)
+            peer_port = discovered_peer.get('port', fallback_port)
+            next_endpoint = f"tcp://{peer_ip}:{peer_port}"
+
+            if state["current_endpoint"] != next_endpoint:
+                if state["current_endpoint"]:
+                    sub_socket.disconnect(state["current_endpoint"])
+                sub_socket.connect(next_endpoint)
+                print(f"[SUB] Connected to {next_endpoint}")
+                state["current_endpoint"] = next_endpoint
+                state["current_peer"] = discovered_peer
+
+        if sub_socket.poll(poll_timeout):
+            return sub_socket.recv_json()
+
         return None
     def __init__(self, node_suffix, discovery_port=None):
-        # Use environment variables if set, else fallback
-        # Try to auto-detect real hostname and IP if running with --network host
-        try:
-            # Get hostname from /etc/hostname (host network mode)
-            with open('/etc/hostname', 'r') as f:
-                hostname_real = f.read().strip()
-        except Exception:
-            hostname_real = socket.gethostname()
-        self.node_id = f"{hostname_real}-{node_suffix}"
+        self.node_id = f"{resolve_device_hostname()}-{node_suffix}"
 
         # Try to get real IP from host network
         self.context = zmq.Context()
@@ -123,7 +152,7 @@ class ZMQNode:
                             "type": "discover",
                             "node_id": self.node_id,
                             "ip": self.local_ip,
-                            "port": getattr(self, 'pub_port', 0),  # Subclass should set this
+                            "port": getattr(self, 'pub_port', 0),
                         }
                     ).encode("utf-8"),
                     (self.broadcast_addr, self.discovery_port),

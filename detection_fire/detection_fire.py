@@ -173,7 +173,7 @@ class DetectionProcessor(ZMQNode):
 
 if __name__ == "__main__":
     # Hardcoded model path
-    model_path = "detection_coco/yolo26n_ncnn_model"
+    model_path = "detection_coco/yolo_fire_ncnn_model"
 
     processor = DetectionProcessor(model_path)
     processor.run()

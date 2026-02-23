@@ -1,6 +1,7 @@
 import ffmpeg
 import base64
 import sys
+import os
 import numpy as np
 import cv2
 import time
@@ -46,8 +47,11 @@ class MotionDetector(ZMQNode):
         super().__init__('motion', discovery_port=DISCOVERY_PORT_MOTION)
         self.pub_port = MOTION_IMAGE_PORT  # For discovery
         self.flag_pub = self.context.socket(zmq.PUB)
+        self.flag_pub.setsockopt(zmq.SNDHWM, int(os.environ.get("FLAG_PUB_SND_HWM", "2000")))
         self.flag_pub.bind(f"tcp://*:{MOTION_FLAG_PORT}")
         self.image_pub = self.context.socket(zmq.PUB)
+        self.image_pub.setsockopt(zmq.SNDHWM, int(os.environ.get("IMAGE_PUB_SND_HWM", "5000")))
+        self.image_pub.setsockopt(zmq.SNDBUF, int(os.environ.get("IMAGE_PUB_SND_BUF", str(8 * 1024 * 1024))))
         self.image_pub.bind(f"tcp://*:{MOTION_IMAGE_PORT}")
         self.prev_blurred_frame = None
         self.last_motion_state = 0
