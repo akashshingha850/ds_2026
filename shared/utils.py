@@ -172,7 +172,7 @@ class ZMQNode:
             dict with 'ip' and 'port', or None if not found
         """
         # Give discovery thread time to do initial broadcast/receive
-        logging.info(f"[Discovery:{self.node_id}] Waiting for peer with suffix '{suffix}'...")
+        print(f"[Discovery:{self.node_id}] Waiting for peer with suffix '{suffix}'...")
         time.sleep(1)
         
         start_time = time.time()
@@ -188,7 +188,7 @@ class ZMQNode:
             elapsed = time.time() - start_time
             if elapsed > timeout:
                 if fallback_to_localhost:
-                    logging.info(f"[Discovery:{self.node_id}] No remote peer found, using {fallback_host}")
+                    print(f"[Discovery:{self.node_id}] No remote peer found, using {fallback_host}")
                     return {'ip': fallback_host, 'port': fallback_port}
                 else:
                     logging.warning(f"[Discovery:{self.node_id}] No peer with suffix '{suffix}' found after {timeout}s")

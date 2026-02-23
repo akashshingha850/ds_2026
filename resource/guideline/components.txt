@@ -1,3 +1,0 @@
-3 Raspberry 
-3 Camera
-1 Jetson Orin Nano

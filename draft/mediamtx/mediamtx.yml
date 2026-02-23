@@ -792,8 +792,11 @@ paths:
 
   playback:
     source: publisher
-    runOnInit: ffmpeg -re -stream_loop -1 -i test.mp4 -c:v libx264 -preset fast -tune zerolatency -f rtsp rtsp://localhost:8554/playback
+    overridePublisher: yes
+    # runOnInit: ffmpeg -re -stream_loop -1 -i test.mp4 -c:v libx264 -preset fast -tune zerolatency -f rtsp rtsp://localhost:8554/playback
     runOnInitRestart: yes
+    alwaysAvailable: true
+    maxReaders: 0
 
 
   # Settings under path "all_others" are applied to all paths that

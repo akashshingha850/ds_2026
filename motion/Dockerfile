@@ -14,7 +14,7 @@ COPY motion/requirements.txt /app/requirements.txt
 COPY shared/utils.py utils.py
 COPY shared/config.py config.py
 RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r /app/requirements.txt
+RUN pip install -r /app/requirements.txt
 
 # Copy only service runtime file
 COPY motion/motion.py /app/motion.py

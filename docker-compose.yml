@@ -1,37 +1,44 @@
 services:
   motion:
+    hostname: ${HOSTNAME}
     build:
       context: .
       dockerfile: motion/Dockerfile
     volumes:
       - shared_data:/app/shared
+      - ./logs:/app/logs
+    environment:
+      - HOST_HOSTNAME=${HOST_HOSTNAME}
     networks:
-      - monitor_net
-    healthcheck:
-      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 5557)); s.close()"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 15s
+      - eyes_edge_net
+    # healthcheck:
+    #   test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 5557)); s.close()"]
+    #   interval: 10s
+    #   timeout: 3s
+    #   retries: 5
+    #   start_period: 15s
     restart: unless-stopped
 
   detection_coco:
+    hostname: ${HOSTNAME}
     build:
       context: .
       dockerfile: detection_coco/Dockerfile
     volumes:
       - shared_data:/app/shared
+      - ./logs:/app/logs
     environment:
       - MOTION_HOST=motion
+      - HOST_HOSTNAME=${HOST_HOSTNAME}
     networks:
-      - monitor_net
-    depends_on:
-      motion:
-        condition: service_healthy
+      - eyes_edge_net
+    # depends_on:
+      # motion:
+        # condition: service_healthy
     restart: unless-stopped
 
 networks:
-  monitor_net:
+  eyes_edge_net:
     driver: bridge
 
 volumes:

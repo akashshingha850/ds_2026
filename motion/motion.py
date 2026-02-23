@@ -143,7 +143,7 @@ class MotionDetector(ZMQNode):
                 self.prev_blurred_frame = blurred_frame
                 self.last_motion_state = 1 if motion_detected else 0
 
-                if change_ratio is not None:
+                if change_ratio is not None and motion_detected:
                     print(f"Motion ratio: {change_ratio:.4f} - {'MOTION DETECTED' if motion_detected else 'No motion'}")
 
         except KeyboardInterrupt:
