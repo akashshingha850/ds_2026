@@ -37,7 +37,7 @@ class DetectionProcessor(ZMQNode):
         self.det_pub = self.context.socket(zmq.PUB)
         self.det_pub.setsockopt(zmq.SNDHWM, int(os.environ.get("DET_PUB_SND_HWM", "5000")))
         self.det_pub.bind(f"tcp://*:{DETECTION_FIRE_PORT}")
-        self.image_count = 0
+
 
     def _compute_queue_age_seconds(self, send_ts, recv_ts_iso):
         if not send_ts or send_ts == "unknown" or not recv_ts_iso:
@@ -75,7 +75,7 @@ class DetectionProcessor(ZMQNode):
         cv2.imwrite(image_path, annotated_image)
         logging.info(f"Saved result image: {image_path}")
 
-    def publish_detection_results(self, detections, timestamp, sender):
+    def publish_detection_results(self, detections, timestamp, sender, image_id=None):
         """Publish detection results via ZeroMQ."""
         message = {
             "type": "detection_results",
@@ -83,9 +83,10 @@ class DetectionProcessor(ZMQNode):
             "sender": sender,
             "detections": detections,
             "ts": timestamp,
+            "image_id": image_id,
         }
         self.det_pub.send_json(message)
-        logging.info(f"Image #{self.image_count} results published: {detections}")
+        logging.info(f"Image #{image_id} results published: {detections}")
 
     def subscriber_loop(self):
         motion_host_fallback = os.environ.get("MOTION_HOST", "motion")
@@ -115,12 +116,11 @@ class DetectionProcessor(ZMQNode):
             if frame is None:
                 print("[SUB] Failed to decode image")
                 continue
-            self.image_count += 1
             inference_start = time.perf_counter()
             results = self.run_inference(frame)
             inference_ms = (time.perf_counter() - inference_start) * 1000
             detection_ts = datetime.now().isoformat()
-            print(f"[SUB] #{self.image_count} recieved from {sender}")
+            # print(f"[SUB] #{image_id} recieved from {sender}")
             # Prepare detection results
             detections = []
             for result in results:
@@ -136,12 +136,12 @@ class DetectionProcessor(ZMQNode):
             queue_age_s = self._compute_queue_age_seconds(send_ts, recv_ts)
             queue_age_text = f"{queue_age_s:.3f}s" if queue_age_s is not None else "unknown"
             logging.info(
-                f"{self.node_id} recieved image #{self.image_count} from {sender} (image_id={image_id}) - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} "
+                f"{self.node_id} received image #{image_id} from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} "
                 f"- Queue Age: {queue_age_text} - Decode: {decode_ms:.2f}ms - Inference: {inference_ms:.2f}ms - Results: {len(detections)} detections"
             )
             # Publish detection results
             publish_start = time.perf_counter()
-            self.publish_detection_results(detections, detection_ts, sender)
+            self.publish_detection_results(detections, detection_ts, sender, image_id=image_id)
             publish_ms = (time.perf_counter() - publish_start) * 1000
             # logging.info(f"{self.node_id} publish stage duration: {publish_ms:.2f}ms")
         self.sub_socket.close()
