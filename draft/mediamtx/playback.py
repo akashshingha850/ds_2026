@@ -11,7 +11,7 @@ rtsp_url = "rtsp://localhost:8554/playback"
 ffmpeg_cmd = [
     "ffmpeg",
     "-re",  # Read input at native frame rate
-    # "-stream_loop", "-1",  # Loop the video infinitely
+    "-stream_loop", "-1",  # Loop the video infinitely
     "-i", test_video,
     "-c:v", "copy",  # Copy video codec (or use libx264 for re-encode)
     "-c:a", "aac",   # Encode audio to AAC

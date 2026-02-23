@@ -774,7 +774,7 @@ paths:
   #   runOnInit: ffmpeg -loglevel quiet -f avfoundation -framerate 30 -video_size 1280x720 -i "0" -c:v libx264 -preset fast -tune zerolatency -f rtsp rtsp://localhost:8554/stream
   #   runOnInitRestart: yes
 
-  playback:
+  stream:
     source: publisher
     # Allow another client to disconnect the current publisher and publish in its place
     overridePublisher: yes
@@ -790,6 +790,15 @@ paths:
     # To publish: use FFmpeg or other publisher to send stream to rtsp://<server>:8554/playback
     # To play: connect client (VLC, ffplay, etc.) to rtsp://<server>:8554/playback or hls://<server>:8888/playback
 
+  playback:
+    source: publisher
+    runOnInit: ffmpeg -re -stream_loop -1 -i test.mp4 -c:v libx264 -preset fast -tune zerolatency -f rtsp rtsp://localhost:8554/playback
+    runOnInitRestart: yes
+
+
   # Settings under path "all_others" are applied to all paths that
   # do not match another entry.
   all_others:
+
+
+
