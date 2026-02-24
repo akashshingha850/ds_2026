@@ -33,6 +33,8 @@ MOTION_THRESHOLD = 0.33
 PIXEL_DIFF_THRESHOLD = 50
 BLUR_SIGMA = 1.5
 KERNEL_SIZE = 5
+MOTION_FPS = 10
+DISCOVERY_PORT_MOTION = 50000
 ```
 
 ## Motion Detection Algorithm
@@ -58,19 +60,23 @@ KERNEL_SIZE = 5
   "type": "motion_flag",
   "node_id": "hostname-motion",
   "flag": 1,  // 1=start, 0=end
-  "timestamp": "15:11:11.186105"
+  "ts": "15:11:11.186105"
 }
 ```
 
 ### Motion Image Message
 ```json
 {
-  "type": "motion_image",
+  "type": "image",
   "node_id": "hostname-motion",
+  "size": "80.35 KB",
   "image_data": "base64_encoded_jpeg",
-  "timestamp": "15:11:11.186105"
+  "ts": "15:11:11.186105",
+  "image_id": 1
 }
 ```
+
+`image_id` is incremental and increases after each published motion image.
 
 ## Usage
 
@@ -88,7 +94,7 @@ python motion.py
 Starting motion detection... Press Ctrl+C to stop.
 Motion ratio: 0.2543 - No motion
 Motion ratio: 0.3879 - MOTION DETECTED
-hostname-motion triggered motion event at 15:11:11.186105 and published image (80.35 KB)
+hostname-motion triggered motion event at 15:11:11.186105 and published image #1, (80.35 KB)
 Motion ratio: 0.2489 - No motion
 Motion ended: sent flag 0
 ```

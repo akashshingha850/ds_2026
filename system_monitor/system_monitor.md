@@ -2,7 +2,9 @@
 
 ## Overview
 
-`system_monitor.py` is a Python script that continuously monitors and logs system status information for a node in the distributed system. It extends the `ZMQNode` class from `utils.py` to provide peer discovery and ZeroMQ-based broadcasting of system metrics. The script collects metrics such as CPU usage, memory usage, disk I/O speeds, network I/O speeds, and CPU temperature, then publishes them via ZeroMQ while also logging locally to both a hostname-based file (`logs/<hostname>.log`) and the console.
+`system_monitor.py` continuously collects local system metrics and publishes them via ZeroMQ while logging to file and console.
+
+It extends `ZMQNode` and uses hostname-aware node IDs (for example, `my-pi-system_monitor`) based on `resolve_device_hostname()`.
 
 ## Features
 
@@ -25,37 +27,24 @@ The `SystemMonitor` class extends `ZMQNode` and implements:
 
 - `psutil`: For system and hardware monitoring.
 - `zmq` (pyzmq): For ZeroMQ messaging.
-- `config.py`: Imports `SYSTEM_MONITOR_INTERVAL` and `SYSTEM_MONITOR_PORT`.
-- `utils.py`: Provides `ZMQNode` base class with discovery and cleanup.
+- `config.py`: Imports `SYSTEM_MONITOR_INTERVAL`, `SYSTEM_MONITOR_PORT`, `DISCOVERY_PORT_SYSTEM`.
+- `utils.py`: Provides `ZMQNode` and `resolve_device_hostname`.
 
 ## Configuration
 
 Configuration values from `config.py`:
 - `SYSTEM_MONITOR_INTERVAL`: Time interval (in seconds) over which speeds are calculated and between status updates (default: 1).
 - `SYSTEM_MONITOR_PORT`: ZeroMQ port for publishing status data (default: 5559).
+- `DISCOVERY_PORT_SYSTEM`: UDP discovery port for system monitor nodes (default: 50001).
 
 ## Usage
 
-### Run with Docker scripts (recommended)
+### Run with Docker Compose (recommended)
 
-From the project root:
-
-```bash
-./build_system_monitor.sh
-./run_system_monitor.sh
-```
-
-The run script starts the container in detached mode with:
-- image name: `system_monitor`
-- container name: `system_monitor`
-- host networking: `--network host`
-- logs volume: `./logs:/app/logs`
-
-If a previous container exists with another name, stop and remove it before rerunning:
+From project root:
 
 ```bash
-docker stop <old_container_name>
-docker rm <old_container_name>
+docker compose up -d system_monitor
 ```
 
 ### Run directly with Python
@@ -63,7 +52,7 @@ docker rm <old_container_name>
 Run the script with Python:
 
 ```bash
-python system_monitor.py
+python system_monitor/system_monitor.py
 ```
 
 The script runs in an infinite loop, publishing and logging status updates every `SYSTEM_MONITOR_INTERVAL` seconds. Use Ctrl+C to stop gracefully.
@@ -71,11 +60,18 @@ The script runs in an infinite loop, publishing and logging status updates every
 ## Output
 
 ### Local Logs
-Logs are written to `logs/<hostname>.log` and console in the following format:
+Logs are written to:
+
+- `logs/<resolved-hostname>-htop-<HH.MM.SS>.log`
+- console output
+
+Log message body format:
 
 ```
 [timestamp] Node ID: hostname-system_monitor, CPU: x%, Memory: used/total GB (%), Disk R/W: read/write KB/s, Network U/D: send/recv KB/s, Temp: x°C
 ```
+
+`[timestamp]` is added by the logging formatter (`%(asctime)s`).
 
 ### ZeroMQ Published Data
 Status data is published as JSON via ZeroMQ with the following structure:
@@ -84,7 +80,7 @@ Status data is published as JSON via ZeroMQ with the following structure:
 {
   "type": "system_status",
   "node_id": "hostname-system_monitor",
-  "timestamp": "2026-02-13 12:34:56",
+  "timestamp": "2026-02-24T12:34:56.123456",
   "cpu": 25.5,
   "memory_used_gb": 2.15,
   "memory_total_gb": 4.0,
@@ -107,7 +103,7 @@ import json
 
 context = zmq.Context()
 socket = context.socket(zmq.SUB)
-socket.connect('tcp://192.168.192.180:5559')  # Connect to Pi's IP and SYSTEM_MONITOR_PORT
+socket.connect('tcp://<system_monitor_ip>:5599')
 socket.setsockopt_string(zmq.SUBSCRIBE, '')  # Subscribe to all messages
 
 while True:
@@ -133,16 +129,6 @@ while True:
 ## Notes
 
 - **Temperature Sensors**: Uses `psutil.sensors_temperatures()`. If sensors are not available, temperature shows an error message.
-- **Discovery**: Inherits peer discovery from `ZMQNode`, broadcasting node presence on UDP port 50000.
+- **Discovery**: Inherits peer discovery from `ZMQNode` using `DISCOVERY_PORT_SYSTEM` (`50001`).
 - **Raspberry Pi Specific**: Optimized for Raspberry Pi but works on any Linux system with appropriate sensors.
 - **Graceful Shutdown**: Handles Ctrl+C (KeyboardInterrupt) to close sockets and clean up resources.
-
-## Troubleshooting
-
-- **Docker API 500 / desktop socket error**: If `docker ps` shows an error containing `/home/.../.docker/desktop/docker.sock`, reset Docker host env:
-
-```bash
-unset DOCKER_HOST
-export DOCKER_HOST=unix:///var/run/docker.sock
-docker ps
-```
