@@ -4,19 +4,22 @@ import socket
 import threading
 import time
 import logging
+import os
 from collections import deque
 from datetime import datetime
 import zmq
 import sys
 
-sys.path.append('../..')
-from config import (
+sys.path.append('.')
+from alerting import AlertManager
+from draft.config import (
     DISCOVERY_BROADCAST,
     DISCOVERY_PORT,
     NODE_PORT,
     MOTION_FLAG_PORT,
     MOTION_IMAGE_PORT,
     DETECTION_COCO_PORT,
+    SERVER_PORT
 )
 
 # Configure logging
@@ -95,31 +98,62 @@ def discovery_loop(stop_event, peers_info, node_id, port):
 
     sock.close()
 
-def send_to_api(message, api_url):
-    """Send the message to the local REST API."""
-    event_type = message.get("type")
-    if event_type is None and "event" in message:
-        event_type = "motion_event"
+def post_alert_to_api(message, api_url):
+    """Send an alert payload to the optional external REST API."""
+    if not api_url:
+        return False
+
+    event_type = message.get("type", "alert_notification")
 
     max_attempts = 3
-    request_timeout_seconds = 20
+    request_timeout_seconds = 10
     for attempt in range(1, max_attempts + 1):
         try:
             response = requests.post(api_url, json=message, timeout=request_timeout_seconds)
             if response.status_code == 200:
-                logging.info(f"Successfully sent message to API: {event_type}")
+                logging.info(f"Successfully sent alert to API: {event_type}")
                 return True
-            logging.error(f"Failed to send message to API (attempt {attempt}/{max_attempts}): {response.status_code} - {response.text}")
+            logging.error(f"Failed to send alert to API (attempt {attempt}/{max_attempts}): {response.status_code} - {response.text}")
         except Exception as e:
-            logging.error(f"Error sending to API (attempt {attempt}/{max_attempts}): {e}")
+            logging.error(f"Error sending alert to API (attempt {attempt}/{max_attempts}): {e}")
 
         if attempt < max_attempts:
             time.sleep(1.0)
 
-    logging.error("API unavailable after retries. Ensure api_server.py is running on localhost:8000")
+    logging.error("External API unavailable after retries; continuing local alerting")
     return False
 
-def subscriber_loop(context, peers_info, stop_event, api_url):
+
+def build_alert_callback(api_url):
+    def _on_alert(subject, body, json_payload):
+        if not api_url:
+            return
+
+        serialized_payload = {}
+        if isinstance(json_payload, dict):
+            serialized_payload = dict(json_payload)
+            serialized_payload.pop("image_bytes", None)
+
+        outbound_message = {
+            "type": "alert_notification",
+            "subject": subject,
+            "body": body,
+            "alert": serialized_payload,
+            "ts": datetime.now().isoformat(),
+        }
+        post_alert_to_api(outbound_message, api_url)
+
+    return _on_alert
+
+
+def process_aggregated_event(alert_manager, payload):
+    try:
+        alert_manager.process_event(payload)
+    except Exception as e:
+        logging.error(f"Alert processing error: {e}")
+
+
+def subscriber_loop(context, peers_info, stop_event, alert_manager):
     sub_socket = context.socket(zmq.SUB)
     sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
@@ -151,7 +185,7 @@ def subscriber_loop(context, peers_info, stop_event, api_url):
             for sender, queue in list(pending_events.items()):
                 while queue and queue[0]["deadline_monotonic"] <= now_monotonic:
                     expired_event = queue.popleft()
-                    send_to_api(expired_event["payload"], api_url)
+                    process_aggregated_event(alert_manager, expired_event["payload"])
                 if not queue:
                     del pending_events[sender]
 
@@ -189,7 +223,7 @@ def subscriber_loop(context, peers_info, stop_event, api_url):
                         pending_event = sender_queue.popleft()
                         pending_event["payload"]["event"]["detection_results"] = message
                         pending_event["payload"]["event"]["metadata"]["detection_ts"] = message.get("ts")
-                        send_to_api(pending_event["payload"], api_url)
+                        process_aggregated_event(alert_manager, pending_event["payload"])
                         if not sender_queue:
                             del pending_events[source_sender]
                 elif message.get('type') == 'image' and sender in current_events:
@@ -225,16 +259,20 @@ def subscriber_loop(context, peers_info, stop_event, api_url):
     sub_socket.close()
 
 if __name__ == "__main__":
-    api_url = "http://localhost:8000/api/data"  # Adjust the URL as needed for your local server
+    api_url = os.getenv("ALERT_SERVER_URL", f"http://localhost:{SERVER_PORT}/api/data").strip()
+    if api_url == "":
+        api_url = None
+
     node_id = f"{socket.gethostname()}-api-sub"
 
     context = zmq.Context()
     peers_info = {}
     stop_event = threading.Event()
+    alert_manager = AlertManager(on_alert=build_alert_callback(api_url))
 
     sub_thread = threading.Thread(
         target=subscriber_loop,
-        args=(context, peers_info, stop_event, api_url),
+        args=(context, peers_info, stop_event, alert_manager),
         daemon=True,
     )
     sub_thread.start()
@@ -248,7 +286,10 @@ if __name__ == "__main__":
 
     print(f"[SUB:{node_id}] Subscribing to messages on port {NODE_PORT}")
     print(f"[SUB:{node_id}] Local IP: {get_local_ip()}")
-    print(f"[SUB:{node_id}] Sending data to {api_url}\n")
+    if api_url:
+        print(f"[SUB:{node_id}] Forwarding generated alerts to {api_url}\n")
+    else:
+        print(f"[SUB:{node_id}] External API forwarding disabled (local alerting only)\n")
 
     try:
         while True:

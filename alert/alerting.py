@@ -1,18 +1,14 @@
 import logging
 import os
-import smtplib
 import threading
 import time
 import base64
 import numpy as np
 import cv2
-from email.mime.multipart import MIMEMultipart
-from email.mime.image import MIMEImage
-from email.mime.text import MIMEText
 
 import requests
 
-from config import (
+from shared.config import (
     ALERTS_ENABLED,
     ALERT_CLASS_WHITELIST,
     ALERT_COOLDOWN_SECONDS,
@@ -26,24 +22,21 @@ from config import (
     ALERT_MIN_CONFIDENCE,
     ALERT_REQUIRE_DETECTIONS,
     ALERT_REQUIRE_MOTION_FLAG,
-    ALERT_SMTP_ENABLED,
-    ALERT_SMTP_FROM,
-    ALERT_SMTP_ATTACH_IMAGE,
-    ALERT_SMTP_HOST,
-    ALERT_SMTP_PASSWORD,
-    ALERT_SMTP_PORT,
-    ALERT_SMTP_TO,
-    ALERT_SMTP_USERNAME,
+    ALERT_TELEGRAM_ENABLED,
+    ALERT_TELEGRAM_ATTACH_IMAGE,
+    ALERT_TELEGRAM_BOT_TOKEN,
+    ALERT_TELEGRAM_CHAT_ID,
     ALERT_WEBHOOK_ENABLED,
     ALERT_WEBHOOK_URL,
 )
 
 
 class AlertManager:
-    def __init__(self):
+    def __init__(self, on_alert=None):
         self.enabled = ALERTS_ENABLED
         self.dry_run = ALERT_DRY_RUN
         self.first_hit_immediate = ALERT_FIRST_HIT_IMMEDIATE
+        self.on_alert = on_alert
         self.lock = threading.Lock()
         self.cooldown_until = {}
         self.digest_buffer = {}
@@ -56,17 +49,10 @@ class AlertManager:
         self.new_object_only = ALERT_NEW_OBJECT_ONLY
         self.object_inactive_seconds = ALERT_OBJECT_INACTIVE_SECONDS
 
-        self.smtp_enabled = ALERT_SMTP_ENABLED
-        self.smtp_attach_image = ALERT_SMTP_ATTACH_IMAGE
-        self.smtp_host = os.getenv("ALERT_SMTP_HOST", ALERT_SMTP_HOST)
-        self.smtp_port = int(os.getenv("ALERT_SMTP_PORT", str(ALERT_SMTP_PORT)))
-        self.smtp_username = os.getenv("ALERT_SMTP_USERNAME", ALERT_SMTP_USERNAME)
-        self.smtp_password = os.getenv("ALERT_SMTP_PASSWORD", ALERT_SMTP_PASSWORD)
-        self.smtp_from = os.getenv("ALERT_SMTP_FROM", ALERT_SMTP_FROM)
-        env_smtp_to = os.getenv("ALERT_SMTP_TO", "")
-        self.smtp_to = ALERT_SMTP_TO
-        if env_smtp_to.strip():
-            self.smtp_to = [item.strip() for item in env_smtp_to.split(",") if item.strip()]
+        self.telegram_enabled = ALERT_TELEGRAM_ENABLED
+        self.telegram_attach_image = ALERT_TELEGRAM_ATTACH_IMAGE
+        self.telegram_bot_token = os.getenv("ALERT_TELEGRAM_BOT_TOKEN", ALERT_TELEGRAM_BOT_TOKEN)
+        self.telegram_chat_id = os.getenv("ALERT_TELEGRAM_CHAT_ID", ALERT_TELEGRAM_CHAT_ID)
 
         self.webhook_enabled = ALERT_WEBHOOK_ENABLED
         self.webhook_url = os.getenv("ALERT_WEBHOOK_URL", ALERT_WEBHOOK_URL)
@@ -112,14 +98,11 @@ class AlertManager:
 
         node_id = metadata.get("node_id") or motion_flag.get("node_id") or "unknown-node"
         if isinstance(node_id, str) and node_id.startswith(self.excluded_node_prefixes):
-            logging.info(f"Alert skipped for excluded test node: {node_id}")
             return
 
         event_ts = metadata.get("event_ts") or motion_flag.get("ts") or "unknown-ts"
         image_payload = event.get("image", {}) if isinstance(event.get("image"), dict) else {}
         image_bytes = self._decode_event_image_for_attachment(image_payload)
-        if image_payload and image_bytes is None:
-            logging.warning("Alert image decode failed; sending email without attachment")
 
         now = time.monotonic()
         immediate_payloads = []
@@ -170,16 +153,13 @@ class AlertManager:
                     was_in_previous = class_name in previous_classes
                     is_recent = last_seen is not None and (now - last_seen) < self.object_inactive_seconds
                     if was_in_previous and is_recent:
-                        logging.info(f"Alert skipped (not new object yet) for {dedup_key}")
                         continue
 
                 if not self.new_object_only and last_seen is not None and (now - last_seen) < self.object_inactive_seconds:
-                    logging.info(f"Alert skipped (not new object yet) for {dedup_key}")
                     continue
 
                 cooldown_expires = self.cooldown_until.get(dedup_key, 0)
                 if now < cooldown_expires:
-                    logging.info(f"Alert suppressed by cooldown for {dedup_key}")
                     continue
                 self.cooldown_until[dedup_key] = now + ALERT_COOLDOWN_SECONDS
 
@@ -295,11 +275,16 @@ class AlertManager:
 
     def _dispatch(self, subject, body, json_payload):
         if self.dry_run:
-            logging.info(f"DRY_RUN alert decision: {subject} | payload_type={json_payload.get('type')}")
             return
 
-        if self.smtp_enabled:
-            self._send_smtp(
+        if callable(self.on_alert):
+            try:
+                self.on_alert(subject, body, json_payload)
+            except Exception as exc:
+                logging.error(f"Alert callback failed: {exc}")
+
+        if self.telegram_enabled:
+            self._send_telegram(
                 subject=subject,
                 body=body,
                 image_bytes=json_payload.get("image_bytes") if isinstance(json_payload, dict) else None,
@@ -307,42 +292,46 @@ class AlertManager:
         if self.webhook_enabled:
             self._send_webhook(json_payload)
 
-    def _send_smtp(self, subject, body, image_bytes=None):
-        if not self.smtp_host or not self.smtp_to:
-            logging.warning("SMTP alert skipped: host or recipients missing")
+    def _send_telegram(self, subject, body, image_bytes=None):
+        if not self.telegram_bot_token or not self.telegram_chat_id:
             return
 
+        caption = f"{subject}\n\n{body}"
+        base_url = f"https://api.telegram.org/bot{self.telegram_bot_token}"
+
         try:
-            message = MIMEMultipart()
-            message["Subject"] = subject
-            message["From"] = self.smtp_from or self.smtp_username
-            message["To"] = ", ".join(self.smtp_to)
-            message.attach(MIMEText(body))
+            if self.telegram_attach_image and image_bytes:
+                response = requests.post(
+                    f"{base_url}/sendPhoto",
+                    data={
+                        "chat_id": self.telegram_chat_id,
+                        "caption": caption[:1024],
+                    },
+                    files={"photo": ("alert_image.jpg", image_bytes, "image/jpeg")},
+                    timeout=10,
+                )
+            else:
+                response = requests.post(
+                    f"{base_url}/sendMessage",
+                    json={
+                        "chat_id": self.telegram_chat_id,
+                        "text": caption,
+                    },
+                    timeout=10,
+                )
 
-            if self.smtp_attach_image and image_bytes:
-                image_part = MIMEImage(image_bytes, _subtype="jpeg")
-                image_part.add_header("Content-Disposition", "attachment", filename="alert_image.jpg")
-                message.attach(image_part)
-
-            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=10) as server:
-                server.starttls()
-                if self.smtp_username and self.smtp_password:
-                    server.login(self.smtp_username, self.smtp_password)
-                server.sendmail(message["From"], self.smtp_to, message.as_string())
-            logging.info(f"Alert sent via SMTP: {subject}")
+            if response.status_code != 200:
+                logging.error(f"Telegram alert failed: {response.status_code} {response.text}")
         except Exception as exc:
-            logging.error(f"SMTP alert failed: {exc}")
+            logging.error(f"Telegram alert failed: {exc}")
 
     def _send_webhook(self, payload):
         if not self.webhook_url:
-            logging.warning("Webhook alert skipped: URL missing")
             return
 
         try:
             response = requests.post(self.webhook_url, json=payload, timeout=10)
-            if 200 <= response.status_code < 300:
-                logging.info("Alert sent via webhook")
-            else:
+            if not (200 <= response.status_code < 300):
                 logging.error(f"Webhook alert failed: {response.status_code} {response.text}")
         except Exception as exc:
             logging.error(f"Webhook alert failed: {exc}")
