@@ -1,7 +1,7 @@
 # =============================================================================
 # CONFIGURATION FILE FOR DISTRIBUTED SYSTEM
 # =============================================================================
-
+##
 # -----------------------------------------------------------------------------
 # PEER DISCOVERY (Shared UDP Broadcast Settings)
 # -----------------------------------------------------------------------------
@@ -65,6 +65,7 @@ RECORD_FPS = 10
 # ALERTING (API SERVER)
 # -----------------------------------------------------------------------------
 ALERTS_ENABLED = True
+SERVER_PORT = 5000
 
 # Trigger and filtering
 ALERT_REQUIRE_MOTION_FLAG = True
@@ -83,15 +84,11 @@ ALERT_IMMEDIATE_CLASSES = ["weapon", "fire"]
 ALERT_FIRST_HIT_IMMEDIATE = True  # Send first accepted detection immediately for any class
 ALERT_EXCLUDED_NODE_PREFIXES = ["smtp-", "live-email-test"]  # Prevent test/synthetic node IDs from sending alerts
 
-# SMTP settings
-ALERT_SMTP_ENABLED = True
-ALERT_SMTP_HOST = "smtp.gmail.com"
-ALERT_SMTP_PORT = 587
-ALERT_SMTP_USERNAME = "moinulislam7002@gmail.com"
-ALERT_SMTP_PASSWORD = "zdxemtdjrosxdxbl"
-ALERT_SMTP_FROM = "moinulislam7002@gmail.com"
-ALERT_SMTP_TO = ["akashshingha584@gmail.com"]
-ALERT_SMTP_ATTACH_IMAGE = True
+# Telegram bot settings
+ALERT_TELEGRAM_ENABLED = True
+ALERT_TELEGRAM_BOT_TOKEN = "8749860605:AAF5rr5MrBQS3ATMjlLJmR4S_sDgdX_xKWg"
+ALERT_TELEGRAM_CHAT_ID = "6057187917"
+ALERT_TELEGRAM_ATTACH_IMAGE = True
 
 # Webhook settings
 ALERT_WEBHOOK_ENABLED = False

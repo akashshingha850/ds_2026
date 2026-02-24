@@ -12,7 +12,7 @@ import sys
 
 sys.path.append('.')
 from alerting import AlertManager
-from draft.config import (
+from config import (
     DISCOVERY_BROADCAST,
     DISCOVERY_PORT,
     NODE_PORT,

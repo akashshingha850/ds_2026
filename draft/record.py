@@ -10,7 +10,7 @@ import subprocess
 # Add parent directory to path to import config
 sys.path.append('.')
 
-from config import (
+from draft.config import (
     MOTION_FLAG_PORT,
     MOTION_URL,
     RECORD_DURATION,

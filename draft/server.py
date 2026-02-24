@@ -7,7 +7,7 @@ import threading
 import sys
 import time
 from datetime import datetime
-from config import SYSTEM_MONITOR_PORT, SYSTEM_MONITOR_INTERVAL, DISCOVERY_PORT_SYSTEM
+from draft.config import SYSTEM_MONITOR_PORT, SYSTEM_MONITOR_INTERVAL, DISCOVERY_PORT_SYSTEM
 from collections import deque
 import pandas as pd
 import streamlit as st
@@ -85,8 +85,8 @@ collector = DataCollector()
 
 # --- Frontend: Dashboard ---
 def run_dashboard():
-    st.set_page_config(page_title="System Monitor", page_icon="📊", layout="wide")
-    st.title("📊 Live System Monitor (Last 60s)")
+    st.set_page_config(page_title="System Monitor", layout="wide")
+    st.title("Live System Monitor (Last 60s)")
     
     with collector.lock:
         node_ids = list(collector.data.keys())

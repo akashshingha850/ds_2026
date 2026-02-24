@@ -15,7 +15,7 @@ from ultralytics import YOLO
 # Add parent directory to path to import config
 sys.path.append('.')
 
-from config import (
+from draft.config import (
     MOTION_IMAGE_PORT,
     DETECTION_WPN_PORT,
     YOLO_WPN_PATH,

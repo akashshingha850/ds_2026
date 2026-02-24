@@ -47,6 +47,18 @@ services:
         # condition: service_healthy
     restart: unless-stopped
 
+  alert:
+    build:
+      context: .
+      dockerfile: alert/Dockerfile
+    volumes:
+      - shared_data:/app/shared
+      - ./logs:/app/logs
+      - /etc/hostname:/host_hostname:ro
+    networks:
+      - eyes_edge_net
+    restart: unless-stopped
+
 
   system_monitor:
     build:

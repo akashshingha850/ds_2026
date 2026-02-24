@@ -17,7 +17,7 @@ from datetime import datetime
 import sys
 sys.path.append('../..')
 
-from config import (
+from draft.config import (
     DISCOVERY_BROADCAST,
     DISCOVERY_PORT,
     NODE_PORT,

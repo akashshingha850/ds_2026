@@ -8,7 +8,7 @@ import zmq
 import sys
 from datetime import datetime
 
-# aiuBSOIBO
+
 # Add parent directory to path to import config
 sys.path.append('.')
 

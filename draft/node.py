@@ -10,7 +10,7 @@ from datetime import datetime
 
 import zmq
 
-from config import (
+from draft.config import (
     DISCOVERY_BROADCAST,
     DISCOVERY_PORT,
     NODE_PORT,

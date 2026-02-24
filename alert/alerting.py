@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import threading
 import time
 import base64
@@ -8,7 +9,8 @@ import cv2
 
 import requests
 
-from shared.config import (
+sys.path.append('.')
+from config import (
     ALERTS_ENABLED,
     ALERT_CLASS_WHITELIST,
     ALERT_COOLDOWN_SECONDS,

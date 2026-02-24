@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 
 # Use service-local requirements file
 COPY motion/requirements.txt /app/requirements.txt
-COPY shared/utils.py utils.py
-COPY shared/config.py config.py
+COPY shared/utils.py /app/utils.py
+COPY shared/config.py /app/config.py
 RUN pip install --upgrade pip
 RUN pip install -r /app/requirements.txt
 
