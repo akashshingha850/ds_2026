@@ -1,20 +1,20 @@
 
 import psutil
 import time
-from shared.config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT, DISCOVERY_PORT_SYSTEM
+from config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT, DISCOVERY_PORT_SYSTEM
 from datetime import datetime
 import socket
 import logging
 import sys
 import zmq
-from shared.utils import ZMQNode
-
-# Override logging settings: logs/<hostname>-top-time(HH.MM.SS).log
+from utils import ZMQNode, resolve_device_hostname
 import os
-hostname = socket.gethostname()
+
+hostname = resolve_device_hostname()
 now = datetime.now().strftime('%H.%M.%S')
 log_filename = f"logs/{hostname}-htop-{now}.log"
-# Remove all handlers associated with the root logger object
+
+# Override logging settings: logs/<hostname>-top-time(HH.MM.SS).log
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 os.makedirs('logs', exist_ok=True)
@@ -146,8 +146,7 @@ class SystemMonitor(ZMQNode):
         
         # Also log locally
         message = (
-            # f"{ts},"
-            # f"Node ID: {self.node_id}, "
+            f"Node ID: {self.node_id}, "
             f"CPU: {cpu_usage}%, "
             f"Memory: {mem['used'] / (1024**3):.2f}/{mem['total'] / (1024**3):.2f} GB ({mem['percent']}%), "
             f"Temp: {temp}, "
@@ -160,7 +159,6 @@ class SystemMonitor(ZMQNode):
         """Save system status to a local log file."""
 
         log_message = (
-            f"{ts},"
             f"Node ID: {self.node_id}, "
             f"CPU: {cpu_usage}%, "
             f"Memory: {mem['used'] / (1024**3):.2f}/{mem['total'] / (1024**3):.2f} GB ({mem['percent']}%), "

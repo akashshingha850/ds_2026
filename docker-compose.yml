@@ -46,9 +46,24 @@ services:
       # motion:
         # condition: service_healthy
     restart: unless-stopped
+
+
+  system_monitor:
+    build:
+      context: .
+      dockerfile: system_monitor/Dockerfile
+    volumes:
+      - shared_data:/app/shared
+      - ./logs:/app/logs
+      - /etc/hostname:/host_hostname:ro
+    networks:
+      - eyes_edge_net
+    # depends_on:
+      # motion:
+        # condition: service_healthy
+    restart: unless-stopped
     
 
-    
 networks:
   eyes_edge_net:
     driver: bridge
