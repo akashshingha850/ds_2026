@@ -1,7 +1,7 @@
 
 import psutil
 import time
-from draft.config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT, DISCOVERY_PORT_SYSTEM
+from config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT, DISCOVERY_PORT_SYSTEM
 from datetime import datetime
 import socket
 import logging
