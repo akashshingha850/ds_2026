@@ -120,3 +120,7 @@ networks:
 
 volumes:
   shared_data:
+
+configs:
+  rebalancer_script:
+    file: ./rebalancer/rebalancer.sh
