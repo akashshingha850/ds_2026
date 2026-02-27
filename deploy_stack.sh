@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Fill this in once, or export DOCKERHUB_USERNAME in your shell.
+DOCKERHUB_USERNAME="mesbahul"
+STACK_NAME="ds_2026"
+COMPOSE_FILE="docker-compose.yml"
+
+if [[ -n "${DOCKERHUB_USERNAME:-}" && "${DOCKERHUB_USERNAME}" != "yourdockerhubusername" ]]; then
+  export DOCKERHUB_USERNAME
+elif [[ -n "${DOCKERHUB_USERNAME:-}" && "${DOCKERHUB_USERNAME}" == "yourdockerhubusername" ]]; then
+  echo "Please set DOCKERHUB_USERNAME in deploy_stack.sh (or export it before running)."
+  exit 1
+fi
+
+echo "Using Docker Hub username: ${DOCKERHUB_USERNAME}"
+
+echo "[1/3] Building images..."
+docker build -t "${DOCKERHUB_USERNAME}/ds-motion:latest" -f motion/Dockerfile .
+docker build -t "${DOCKERHUB_USERNAME}/ds-detection-coco:latest" -f detection_coco/Dockerfile .
+docker build -t "${DOCKERHUB_USERNAME}/ds-detection-fire:latest" -f detection_fire/Dockerfile .
+docker build -t "${DOCKERHUB_USERNAME}/ds-alert:latest" -f alert/Dockerfile .
+docker build -t "${DOCKERHUB_USERNAME}/ds-system-monitor:latest" -f system_monitor/Dockerfile .
+
+echo "[2/3] Pushing images to Docker Hub..."
+docker push "${DOCKERHUB_USERNAME}/ds-motion:latest"
+docker push "${DOCKERHUB_USERNAME}/ds-detection-coco:latest"
+docker push "${DOCKERHUB_USERNAME}/ds-detection-fire:latest"
+docker push "${DOCKERHUB_USERNAME}/ds-alert:latest"
+docker push "${DOCKERHUB_USERNAME}/ds-system-monitor:latest"
+
+echo "[3/3] Deploying Docker stack..."
+docker stack deploy --with-registry-auth -c "${COMPOSE_FILE}" "${STACK_NAME}"
+
+echo "Done. Current services:"
+docker stack services "${STACK_NAME}"
