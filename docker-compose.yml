@@ -13,7 +13,9 @@ services:
     #   timeout: 3s
     #   retries: 5
     #   start_period: 15s
-    restart: unless-stopped
+    deploy:
+      restart_policy:
+        condition: any
 
   detection_coco:
     image: ${DOCKERHUB_USERNAME}/ds-detection-coco:latest
@@ -26,7 +28,9 @@ services:
     # depends_on:
       # motion:
         # condition: service_healthy
-    restart: unless-stopped
+    deploy:
+      restart_policy:
+        condition: any
 
   detection_fire:
     image: ${DOCKERHUB_USERNAME}/ds-detection-fire:latest
@@ -39,7 +43,9 @@ services:
     # depends_on:
       # motion:
         # condition: service_healthy
-    restart: unless-stopped
+    deploy:
+      restart_policy:
+        condition: any
 
   alert:
     image: ${DOCKERHUB_USERNAME}/ds-alert:latest
@@ -49,7 +55,9 @@ services:
       - /etc/hostname:/host_hostname:ro
     networks:
       - eyes_edge_net
-    restart: unless-stopped
+    deploy:
+      restart_policy:
+        condition: any
 
 
   system_monitor:
@@ -63,12 +71,15 @@ services:
     # depends_on:
       # motion:
         # condition: service_healthy
-    restart: unless-stopped
+    deploy:
+      restart_policy:
+        condition: any
     
 
 networks:
   eyes_edge_net:
-    driver: bridge
+    driver: overlay
+    attachable: true
 
 volumes:
   shared_data:
