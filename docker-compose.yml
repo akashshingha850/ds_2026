@@ -1,6 +1,6 @@
 services:
   motion:
-    image: ${DOCKERHUB_USERNAME}/ds-motion:latest
+    image: mesbahul/ds-motion:latest
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
@@ -21,7 +21,7 @@ services:
         condition: any
 
   detection_coco:
-    image: ${DOCKERHUB_USERNAME}/ds-detection-coco:latest
+    image: mesbahul/ds-detection-coco:latest
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
@@ -39,7 +39,7 @@ services:
         condition: any
 
   detection_fire:
-    image: ${DOCKERHUB_USERNAME}/ds-detection-fire:latest
+    image: mesbahul/ds-detection-fire:latest
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
@@ -57,7 +57,7 @@ services:
         condition: any
 
   alert:
-    image: ${DOCKERHUB_USERNAME}/ds-alert:latest
+    image: mesbahul/ds-alert:latest
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
@@ -73,7 +73,7 @@ services:
 
 
   system_monitor:
-    image: ${DOCKERHUB_USERNAME}/ds-system-monitor:latest
+    image: mesbahul/ds-system-monitor:latest
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
