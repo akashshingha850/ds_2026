@@ -96,7 +96,7 @@ services:
         target: /rebalancer.sh
         mode: 0555
     environment:
-      STACK_NAME: hello
+      STACK_NAME: ds_2026
       POLL_SECONDS: "15"
       COOLDOWN_SECONDS: "60"
     volumes:
