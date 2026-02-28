@@ -14,6 +14,7 @@ services:
     #   retries: 5
     #   start_period: 15s
     deploy:
+      replicas: 1
       labels:
         - com.ds.stack=ds_2026
         - com.ds.service=motion
@@ -32,11 +33,15 @@ services:
       # motion:
         # condition: service_healthy
     deploy:
+      replicas: 1
       labels:
         - com.ds.stack=ds_2026
         - com.ds.service=detection_coco
       restart_policy:
         condition: any
+      placement:
+        constraints:
+          - node.hostname != pi3
 
   detection_fire:
     image: mesbahul/ds-detection-fire:latest
@@ -50,11 +55,15 @@ services:
       # motion:
         # condition: service_healthy
     deploy:
+      replicas: 1
       labels:
         - com.ds.stack=ds_2026
         - com.ds.service=detection_fire
       restart_policy:
         condition: any
+      placement:
+        constraints:
+          - node.hostname != pi3
 
   alert:
     image: mesbahul/ds-alert:latest
@@ -65,6 +74,7 @@ services:
     networks:
       - eyes_edge_net
     deploy:
+      replicas: 1
       labels:
         - com.ds.stack=ds_2026
         - com.ds.service=alert
@@ -84,33 +94,72 @@ services:
       # motion:
         # condition: service_healthy
     deploy:
+      mode: global
       labels:
         - com.ds.stack=ds_2026
         - com.ds.service=system_monitor
       restart_policy:
         condition: any
-  rebalancer:
-    image: docker:27-cli
-    configs:
-      - source: rebalancer_script
-        target: /rebalancer.sh
-        mode: 0555
-    environment:
-      STACK_NAME: ds_2026
-      POLL_SECONDS: "15"
-      COOLDOWN_SECONDS: "60"
+        
+  # rebalancer:
+  #   image: docker:27-cli
+  #   configs:
+  #     - source: rebalancer_script
+  #       target: /rebalancer.sh
+  #       mode: 0555
+  #   environment:
+  #     STACK_NAME: ds_2026
+  #     POLL_SECONDS: "15"
+  #     COOLDOWN_SECONDS: "60"
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   command: ["sh", "/rebalancer.sh"]
+  #   deploy:
+  #     replicas: 1
+  #     placement:
+  #       constraints:
+  #         - node.role == manager
+  #     restart_policy:
+  #       condition: any
+  #       delay: 5s
+  #       max_attempts: 0
+
+  swarm-dashboard:
+    image: mohsenasm/swarm-dashboard:latest
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: ["sh", "/rebalancer.sh"]
+    ports:
+      - 8080:8080
+    environment:
+      TZ: "Europe/Helsinki"
+      ENABLE_AUTHENTICATION: "false"
+      ENABLE_HTTPS: "false"
+      # NODE_EXPORTER_SERVICE_NAME_REGEX: "node-exporter"
+      # CADVISOR_SERVICE_NAME_REGEX: "cadvisor"
     deploy:
-      replicas: 1
       placement:
         constraints:
           - node.role == manager
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 0
+  
+  # node-exporter:
+  #   image: quay.io/prometheus/node-exporter:v1.6.1
+  #   volumes:
+  #     - '/:/host:ro'
+  #   command:
+  #     - '--path.rootfs=/host'
+  #   deploy:
+  #     mode: global
+
+  # cadvisor:
+  #   image: gcr.io/cadvisor/cadvisor:v0.47.2
+  #   volumes:
+  #     - /:/rootfs:ro
+  #     - /var/run:/var/run:rw
+  #     - /sys:/sys:ro
+  #     - /var/lib/docker/:/var/lib/docker:ro
+  #     - /dev/disk/:/dev/disk:ro
+  #   deploy:
+  #     mode: global
     
 
 networks:
