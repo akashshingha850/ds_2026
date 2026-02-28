@@ -30,7 +30,7 @@ docker push "${DOCKERHUB_USERNAME}/ds-alert:latest"
 docker push "${DOCKERHUB_USERNAME}/ds-system-monitor:latest"
 
 echo "[3/3] Deploying Docker stack..."
-docker stack deploy --with-registry-auth -c "${COMPOSE_FILE}" "${STACK_NAME}"
+docker stack deploy --with-registry-auth -c docker-compose.yml ds_2026
 
 echo "Done. Current services:"
 docker stack services "${STACK_NAME}"

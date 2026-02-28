@@ -124,7 +124,7 @@ services:
   #       delay: 5s
   #       max_attempts: 0
 
-  swarm-dashboard:
+  zswarm-dashboard:
     image: mohsenasm/swarm-dashboard:latest
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
@@ -137,6 +137,7 @@ services:
       # NODE_EXPORTER_SERVICE_NAME_REGEX: "node-exporter"
       # CADVISOR_SERVICE_NAME_REGEX: "cadvisor"
     deploy:
+      mode: global
       placement:
         constraints:
           - node.role == manager
@@ -170,6 +171,6 @@ networks:
 volumes:
   shared_data:
 
-configs:
-  rebalancer_script:
-    file: ./rebalancer/rebalancer.sh
+# configs:
+#   rebalancer_script:
+#     file: ./rebalancer/rebalancer.sh
