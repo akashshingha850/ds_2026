@@ -5,6 +5,7 @@ set -euo pipefail
 DOCKERHUB_USERNAME="mesbahul"
 STACK_NAME="ds_2026"
 COMPOSE_FILE="docker-compose.yml"
+ALERT_ENV_FILE=".env.alert"
 
 if [[ -n "${DOCKERHUB_USERNAME:-}" && "${DOCKERHUB_USERNAME}" != "yourdockerhubusername" ]]; then
   export DOCKERHUB_USERNAME
@@ -14,6 +15,21 @@ elif [[ -n "${DOCKERHUB_USERNAME:-}" && "${DOCKERHUB_USERNAME}" == "yourdockerhu
 fi
 
 echo "Using Docker Hub username: ${DOCKERHUB_USERNAME}"
+
+if [[ ! -f "${ALERT_ENV_FILE}" ]]; then
+  if [[ -f "${ALERT_ENV_FILE}.example" ]]; then
+    cp "${ALERT_ENV_FILE}.example" "${ALERT_ENV_FILE}"
+    echo "Created ${ALERT_ENV_FILE} from template. Please edit it with real Telegram credentials."
+  else
+    echo "Warning: ${ALERT_ENV_FILE} not found. Alert Telegram env vars will use defaults."
+  fi
+fi
+
+if [[ -f "${ALERT_ENV_FILE}" ]]; then
+  set -a
+  source "${ALERT_ENV_FILE}"
+  set +a
+fi
 
 echo "[1/3] Building images..."
 docker build -t "${DOCKERHUB_USERNAME}/ds-motion:latest" -f motion/Dockerfile .

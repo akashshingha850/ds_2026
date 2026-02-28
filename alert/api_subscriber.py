@@ -22,19 +22,6 @@ from config import (
     SERVER_PORT
 )
 
-# Configure logging
-logging.basicConfig(
-    filename='api_subscriber.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(message)s'
-)
-# Add console handler
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(message)s')
-console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
-
 def get_local_ip():
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:

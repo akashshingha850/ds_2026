@@ -67,6 +67,8 @@ services:
 
   alert:
     image: mesbahul/ds-alert:latest
+    env_file:
+      - ./.env.alert
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs

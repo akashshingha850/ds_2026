@@ -2,6 +2,7 @@ draft/img/received_images
 draft/yolo/detections
 draft/requests/api_subscriber.log
 
+.env*
 recordings/
 log.log
 

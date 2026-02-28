@@ -4,12 +4,14 @@ import sys
 import threading
 import time
 import base64
+from datetime import datetime
 import numpy as np
 import cv2
 
 import requests
 
 sys.path.append('.')
+import utils
 from config import (
     ALERTS_ENABLED,
     ALERT_CLASS_WHITELIST,
@@ -82,6 +84,16 @@ class AlertManager:
 
         return encoded.tobytes()
 
+    def _compute_queue_age_seconds(self, send_ts, recv_ts_iso):
+        if not send_ts or send_ts == "unknown" or not recv_ts_iso:
+            return None
+        try:
+            send_dt = datetime.fromisoformat(send_ts)
+            recv_dt = datetime.fromisoformat(recv_ts_iso)
+            return (recv_dt - send_dt).total_seconds()
+        except Exception:
+            return None
+
     def process_event(self, payload):
         if not self.enabled:
             return
@@ -105,6 +117,21 @@ class AlertManager:
         event_ts = metadata.get("event_ts") or motion_flag.get("ts") or "unknown-ts"
         image_payload = event.get("image", {}) if isinstance(event.get("image"), dict) else {}
         image_bytes = self._decode_event_image_for_attachment(image_payload)
+
+        image_id = image_payload.get("image_id", None)
+        sender = image_payload.get("node_id", node_id)
+        send_ts = image_payload.get("ts", "unknown")
+        recv_ts = image_payload.get("recv_ts", metadata.get("recv_ts", "unknown"))
+        detection_ts = metadata.get("detection_ts") or detection_results.get("ts") or "unknown"
+        decode_ms = float(detection_results.get("decode_ms", 0.0) or 0.0)
+        inference_ms = float(detection_results.get("inference_ms", 0.0) or 0.0)
+        queue_age_s = self._compute_queue_age_seconds(send_ts, recv_ts)
+        queue_age_text = f"{queue_age_s:.3f}s" if queue_age_s is not None else "unknown"
+
+        logging.info(
+            f"{node_id} received image #{image_id} from {sender} - Send TS: {send_ts} - Recv TS: {recv_ts} - Detect TS: {detection_ts} "
+            f"- Queue Age: {queue_age_text} - Decode: {decode_ms:.2f}ms - Inference: {inference_ms:.2f}ms - Results: {len(detections)} detections"
+        )
 
         now = time.monotonic()
         immediate_payloads = []
@@ -283,7 +310,7 @@ class AlertManager:
             try:
                 self.on_alert(subject, body, json_payload)
             except Exception as exc:
-                logging.error(f"Alert callback failed: {exc}")
+                pass
 
         if self.telegram_enabled:
             self._send_telegram(

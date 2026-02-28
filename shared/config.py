@@ -1,6 +1,16 @@
 # =============================================================================
 # CONFIGURATION FILE FOR DISTRIBUTED SYSTEM
 # =============================================================================
+import os
+
+
+def _env_bool(name, default):
+	value = os.getenv(name)
+	if value is None:
+		return default
+	return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 ##
 # -----------------------------------------------------------------------------
 # PEER DISCOVERY (Shared UDP Broadcast Settings)
@@ -85,10 +95,10 @@ ALERT_FIRST_HIT_IMMEDIATE = True  # Send first accepted detection immediately fo
 ALERT_EXCLUDED_NODE_PREFIXES = ["smtp-", "live-email-test"]  # Prevent test/synthetic node IDs from sending alerts
 
 # Telegram bot settings
-ALERT_TELEGRAM_ENABLED = True
-ALERT_TELEGRAM_BOT_TOKEN = ""
-ALERT_TELEGRAM_CHAT_ID = "6057187917"
-ALERT_TELEGRAM_ATTACH_IMAGE = True
+ALERT_TELEGRAM_ENABLED = _env_bool("ALERT_TELEGRAM_ENABLED", True)
+ALERT_TELEGRAM_BOT_TOKEN = os.getenv("ALERT_TELEGRAM_BOT_TOKEN", "")
+ALERT_TELEGRAM_CHAT_ID = os.getenv("ALERT_TELEGRAM_CHAT_ID", "")
+ALERT_TELEGRAM_ATTACH_IMAGE = _env_bool("ALERT_TELEGRAM_ATTACH_IMAGE", True)
 
 # Webhook settings
 ALERT_WEBHOOK_ENABLED = False
