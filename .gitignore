@@ -6,6 +6,7 @@ draft/requests/api_subscriber.log
 recordings/
 log.log
 
+*.mp4
 *.pt
 *.onnx
 *.engine
