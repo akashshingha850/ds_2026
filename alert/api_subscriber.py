@@ -1,10 +1,8 @@
-import requests
 import json
 import socket
 import threading
 import time
 import logging
-import os
 from collections import deque
 from datetime import datetime
 import zmq
@@ -19,7 +17,6 @@ from config import (
     MOTION_FLAG_PORT,
     MOTION_IMAGE_PORT,
     DETECTION_COCO_PORT,
-    SERVER_PORT
 )
 
 def get_local_ip():
@@ -84,54 +81,6 @@ def discovery_loop(stop_event, peers_info, node_id, port):
         time.sleep(15 if peers_info else 2)
 
     sock.close()
-
-def post_alert_to_api(message, api_url):
-    """Send an alert payload to the optional external REST API."""
-    if not api_url:
-        return False
-
-    event_type = message.get("type", "alert_notification")
-
-    max_attempts = 3
-    request_timeout_seconds = 10
-    for attempt in range(1, max_attempts + 1):
-        try:
-            response = requests.post(api_url, json=message, timeout=request_timeout_seconds)
-            if response.status_code == 200:
-                logging.info(f"Successfully sent alert to API: {event_type}")
-                return True
-            logging.error(f"Failed to send alert to API (attempt {attempt}/{max_attempts}): {response.status_code} - {response.text}")
-        except Exception as e:
-            logging.error(f"Error sending alert to API (attempt {attempt}/{max_attempts}): {e}")
-
-        if attempt < max_attempts:
-            time.sleep(1.0)
-
-    logging.error("External API unavailable after retries; continuing local alerting")
-    return False
-
-
-def build_alert_callback(api_url):
-    def _on_alert(subject, body, json_payload):
-        if not api_url:
-            return
-
-        serialized_payload = {}
-        if isinstance(json_payload, dict):
-            serialized_payload = dict(json_payload)
-            serialized_payload.pop("image_bytes", None)
-
-        outbound_message = {
-            "type": "alert_notification",
-            "subject": subject,
-            "body": body,
-            "alert": serialized_payload,
-            "ts": datetime.now().isoformat(),
-        }
-        post_alert_to_api(outbound_message, api_url)
-
-    return _on_alert
-
 
 def process_aggregated_event(alert_manager, payload):
     try:
@@ -246,16 +195,12 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
     sub_socket.close()
 
 if __name__ == "__main__":
-    api_url = os.getenv("ALERT_SERVER_URL", f"http://localhost:{SERVER_PORT}/api/data").strip()
-    if api_url == "":
-        api_url = None
-
     node_id = f"{socket.gethostname()}-api-sub"
 
     context = zmq.Context()
     peers_info = {}
     stop_event = threading.Event()
-    alert_manager = AlertManager(on_alert=build_alert_callback(api_url))
+    alert_manager = AlertManager()
 
     sub_thread = threading.Thread(
         target=subscriber_loop,
@@ -273,10 +218,7 @@ if __name__ == "__main__":
 
     print(f"[SUB:{node_id}] Subscribing to messages on port {NODE_PORT}")
     print(f"[SUB:{node_id}] Local IP: {get_local_ip()}")
-    if api_url:
-        print(f"[SUB:{node_id}] Forwarding generated alerts to {api_url}\n")
-    else:
-        print(f"[SUB:{node_id}] External API forwarding disabled (local alerting only)\n")
+    print(f"[SUB:{node_id}] Alert forwarding is Telegram/Webhook only\n")
 
     try:
         while True:
