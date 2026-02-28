@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 import requests
 
-from config import (
+from shared.config import (
     ALERTS_ENABLED,
     ALERT_COOLDOWN_SECONDS,
     ALERT_DRY_RUN,

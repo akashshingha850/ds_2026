@@ -3,12 +3,17 @@ import socket
 import threading
 import time
 import logging
+import os
 from collections import deque
 from datetime import datetime
 import zmq
 import sys
 
-sys.path.append('.')
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, ".."))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+from utils import resolve_device_hostname
 from alerting import AlertManager
 from config import (
     DISCOVERY_BROADCAST,
@@ -17,6 +22,7 @@ from config import (
     MOTION_FLAG_PORT,
     MOTION_IMAGE_PORT,
     DETECTION_COCO_PORT,
+    DETECTION_FIRE_PORT,
 )
 
 def get_local_ip():
@@ -77,7 +83,7 @@ def discovery_loop(stop_event, peers_info, node_id, port):
             pass
 
         if peers_info:
-            print(f"[Discovery:{node_id}] Known peers: {list(peers_info.keys())}")
+            logging.info(f"[Discovery:{node_id}] Known peers: {list(peers_info.keys())}")
         time.sleep(15 if peers_info else 2)
 
     sock.close()
@@ -105,13 +111,14 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
             return
         sub_socket.connect(endpoint)
         connected_endpoints.add(endpoint)
-        print(f"[SUB] Connected to {label} at {endpoint}")
+        logging.info(f"[SUB] Connected to {label} at {endpoint}")
         time.sleep(0.2)
 
     # Hybrid fallback: keep localhost endpoints connected as backup.
     connect_endpoint("127.0.0.1", MOTION_FLAG_PORT, "localhost-motion-flag")
     connect_endpoint("127.0.0.1", MOTION_IMAGE_PORT, "localhost-motion-image")
     connect_endpoint("127.0.0.1", DETECTION_COCO_PORT, "localhost-detection-coco")
+    connect_endpoint("127.0.0.1", DETECTION_FIRE_PORT, "localhost-detection-fire")
 
     while not stop_event.is_set():
         try:
@@ -135,6 +142,8 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
                     connect_endpoint(peer_ip, MOTION_IMAGE_PORT, f"{peer_id}-image")
                 elif peer_id.endswith("-detection_coco"):
                     connect_endpoint(peer_ip, DETECTION_COCO_PORT, peer_id)
+                elif peer_id.endswith("-detection_fire"):
+                    connect_endpoint(peer_ip, DETECTION_FIRE_PORT, peer_id)
                 else:
                     connect_endpoint(peer_ip, info.get("port", NODE_PORT), peer_id)
 
@@ -143,7 +152,7 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
                 message = sub_socket.recv_json()
                 message_count += 1
                 sender = message.get("node_id", "unknown")
-                print(f"[SUB] Received message #{message_count} from {sender}: {message.get('type')}")
+                logging.info(f"[SUB] Received message #{message_count} from {sender}: {message.get('type')}")
 
                 # Add receive timestamp
                 message["recv_ts"] = recv_ts
@@ -189,13 +198,13 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
             break
         except Exception as e:
             if not stop_event.is_set():
-                print(f"[SUB] Error: {e}")
+                logging.error(f"[SUB] Error: {e}")
             connected_endpoints.clear()
 
     sub_socket.close()
 
 if __name__ == "__main__":
-    node_id = f"{socket.gethostname()}-api-sub"
+    node_id = f"{resolve_device_hostname()}-api-sub"
 
     context = zmq.Context()
     peers_info = {}
@@ -216,15 +225,15 @@ if __name__ == "__main__":
     )
     discovery_thread.start()
 
-    print(f"[SUB:{node_id}] Subscribing to messages on port {NODE_PORT}")
-    print(f"[SUB:{node_id}] Local IP: {get_local_ip()}")
-    print(f"[SUB:{node_id}] Alert forwarding is Telegram/Webhook only\n")
+    logging.info(f"[SUB:{node_id}] Subscribing to messages on port {NODE_PORT}")
+    logging.info(f"[SUB:{node_id}] Local IP: {get_local_ip()}")
+    logging.info(f"[SUB:{node_id}] Alert forwarding is Telegram/Webhook only")
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n[INFO] Shutting down...")
+        logging.info("[INFO] Shutting down...")
     finally:
         stop_event.set()
         context.term()
