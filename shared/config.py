@@ -32,7 +32,7 @@ MOTION_URL = 'rtsp://192.168.144.203:8554/playback'
 #MOTION_URL = 'rtsp://172.20.10.2:31555/nvstream/opt/store/nvstreamer_videos/ccfootage.mp4' # Local RTSP URL for testing on Jetson Nano with local video file
 
 
-MOTION_THRESHOLD = 0.3
+MOTION_THRESHOLD = 0.5
 PIXEL_DIFF_THRESHOLD = 50
 BLUR_SIGMA = 1.5
 KERNEL_SIZE = 5

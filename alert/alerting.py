@@ -1,14 +1,18 @@
 import base64
+import json
 import logging
 import os
 import threading
 import time
+from datetime import datetime
 
 import cv2
 import numpy as np
 import requests
 
-from shared.config import (
+from utils import resolve_device_hostname
+
+from config import (
     ALERTS_ENABLED,
     ALERT_COOLDOWN_SECONDS,
     ALERT_DRY_RUN,
@@ -19,10 +23,13 @@ from shared.config import (
     ALERT_WEBHOOK_ENABLED,
     ALERT_WEBHOOK_URL,
 )
-
+ALERT_TELEGRAM_BOT_TOKEN="8680352976:AAE1QES_Nn4JCwSl6EIRlfo3BAX-8B8eCqw"
+ALERT_TELEGRAM_CHAT_ID=6057187917
+ALERT_TELEGRAM_ATTACH_IMAGE=True
 
 class AlertManager:
     def __init__(self, on_alert=None):
+        self.node_id = resolve_device_hostname()
         self.enabled = ALERTS_ENABLED
         self.dry_run = ALERT_DRY_RUN
         self.on_alert = on_alert
@@ -125,6 +132,16 @@ class AlertManager:
         if self.dry_run:
             return
 
+        send_ts = datetime.now().isoformat()
+        payload_copy = dict(json_payload) if isinstance(json_payload, dict) else {}
+        image_bytes = payload_copy.pop("image_bytes", None)
+        payload_copy["alert_send_ts"] = send_ts
+        payload_copy["image_attached"] = bool(image_bytes)
+        payload_text = json.dumps(payload_copy, ensure_ascii=False)
+        logging.info(
+            f" {self.node_id} SENT ALERT -  Send TS: {send_ts} - Subject: {subject} - Payload: {payload_text}"
+        )
+
         if callable(self.on_alert):
             try:
                 self.on_alert(subject, body, json_payload)
@@ -163,6 +180,8 @@ class AlertManager:
                 )
             if response.status_code != 200:
                 logging.error(f"Telegram alert failed: {response.status_code} {response.text}")
+            else:
+                logging.info(f"[ALERT_SEND] Telegram sent successfully - status={response.status_code}")
         except Exception as exc:
             logging.error(f"Telegram alert failed: {exc}")
 
@@ -173,5 +192,7 @@ class AlertManager:
             response = requests.post(self.webhook_url, json=payload, timeout=10)
             if not (200 <= response.status_code < 300):
                 logging.error(f"Webhook alert failed: {response.status_code} {response.text}")
+            else:
+                logging.info(f"[ALERT_SEND] Webhook sent successfully - status={response.status_code}")
         except Exception as exc:
             logging.error(f"Webhook alert failed: {exc}")

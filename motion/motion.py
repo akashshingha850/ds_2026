@@ -94,7 +94,7 @@ class MotionDetector(ZMQNode):
                 "image_id": self.image_id,
             }
             self.image_pub.send_json(message)
-            logging.info(f"{self.node_id} triggered motion event at {timestamp} and published image #{self.image_id}, ({image_size_kb:.2f} KB)")
+            logging.info(f"{self.node_id} published image #{self.image_id} ({image_size_kb:.2f} KB) at {timestamp} ")
             self.image_id += 1
         else:
             logging.error("Failed to encode image")

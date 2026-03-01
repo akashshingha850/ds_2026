@@ -86,7 +86,7 @@ class DetectionProcessor(ZMQNode):
             "image_id": image_id,
         }
         self.det_pub.send_json(message)
-        logging.info(f"Image #{image_id} results published: {detections}")
+        logging.info(f"{self.node_id} Published Image #{image_id} results: {detections}")
 
     def subscriber_loop(self):
         motion_host_fallback = os.environ.get("MOTION_HOST", "motion")

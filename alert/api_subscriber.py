@@ -4,8 +4,7 @@ import threading
 import time
 import logging
 import os
-from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 import zmq
 import sys
 
@@ -25,6 +24,8 @@ from config import (
     DETECTION_FIRE_PORT,
 )
 
+
+
 def get_local_ip():
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -40,7 +41,7 @@ def discovery_loop(stop_event, peers_info, node_id, port):
     try:
         sock.bind(("", DISCOVERY_PORT))
     except OSError as e:
-        logging.warning(f"Discovery disabled: cannot bind UDP {DISCOVERY_PORT} ({e})")
+        print(f"[WARN] Discovery disabled: cannot bind UDP {DISCOVERY_PORT} ({e})")
         sock.close()
         return
     sock.settimeout(1.0)
@@ -83,13 +84,53 @@ def discovery_loop(stop_event, peers_info, node_id, port):
             pass
 
         if peers_info:
-            logging.info(f"[Discovery:{node_id}] Known peers: {list(peers_info.keys())}")
+            print(f"[Discovery:{node_id}] Known peers: {list(peers_info.keys())}")
         time.sleep(15 if peers_info else 2)
 
     sock.close()
 
 def process_aggregated_event(alert_manager, payload):
     try:
+        event = payload.get("event", {}) if isinstance(payload, dict) else {}
+        metadata = event.get("metadata", {}) if isinstance(event.get("metadata"), dict) else {}
+        motion_flag = event.get("motion_flag", {}) if isinstance(event.get("motion_flag"), dict) else {}
+        detection_results = event.get("detection_results", {}) if isinstance(event.get("detection_results"), dict) else {}
+        detections = detection_results.get("detections", []) if isinstance(detection_results, dict) else []
+
+        def _compute_queue_age_seconds(send_ts, recv_ts_iso):
+            if not send_ts or send_ts == "unknown" or not recv_ts_iso:
+                return None
+            try:
+                recv_dt = datetime.fromisoformat(recv_ts_iso)
+                if "T" in str(send_ts):
+                    send_dt = datetime.fromisoformat(send_ts)
+                else:
+                    try:
+                        send_time = datetime.strptime(send_ts, "%H:%M:%S.%f").time()
+                    except ValueError:
+                        send_time = datetime.strptime(send_ts, "%H:%M:%S").time()
+                    send_dt = datetime.combine(recv_dt.date(), send_time)
+                    if send_dt > recv_dt:
+                        send_dt = send_dt - timedelta(days=1)
+                return (recv_dt - send_dt).total_seconds()
+            except Exception:
+                return None
+
+        recv_ts = event.get("image", {}).get("recv_ts") or metadata.get("image_ts") or datetime.now().isoformat()
+        event_ts = metadata.get("event_ts") or motion_flag.get("ts") or "unknown"
+        detection_ts = metadata.get("detection_ts") or detection_results.get("ts")
+        image_payload = event.get("image", {}) if isinstance(event.get("image"), dict) else {}
+        image_id = image_payload.get("image_id") or detection_results.get("image_id")
+        alert_send_ts = datetime.now().isoformat()
+        queue_age_s = _compute_queue_age_seconds(event_ts, alert_send_ts)
+        queue_age_text = f"{queue_age_s:.3f}s" if queue_age_s is not None else "unknown"
+        node_id = metadata.get("node_id") or motion_flag.get("node_id") or "unknown-node"
+
+        logging.info(
+            f"[ALERT_PIPELINE] Node: {node_id} recieved Image #{image_id} - Event TS: {event_ts} - Recv TS: {recv_ts} - Detection TS: {detection_ts} "
+            f"- Alert Send TS: {alert_send_ts} - Queue Age: {queue_age_text} - Detections: {len(detections)}"
+        )
+
         alert_manager.process_event(payload)
     except Exception as e:
         logging.error(f"Alert processing error: {e}")
@@ -111,7 +152,7 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
             return
         sub_socket.connect(endpoint)
         connected_endpoints.add(endpoint)
-        logging.info(f"[SUB] Connected to {label} at {endpoint}")
+        logging.info(f"[API-SUB] Connected to {label} at {endpoint}")
         time.sleep(0.2)
 
     # Hybrid fallback: keep localhost endpoints connected as backup.
@@ -125,12 +166,10 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
             now_monotonic = time.monotonic()
 
             # Flush stale pending events that did not receive detection in time.
-            for sender, queue in list(pending_events.items()):
-                while queue and queue[0]["deadline_monotonic"] <= now_monotonic:
-                    expired_event = queue.popleft()
-                    process_aggregated_event(alert_manager, expired_event["payload"])
-                if not queue:
-                    del pending_events[sender]
+            for event_key, pending_event in list(pending_events.items()):
+                if pending_event["deadline_monotonic"] <= now_monotonic:
+                    process_aggregated_event(alert_manager, pending_event["payload"])
+                    del pending_events[event_key]
 
             for peer_id, info in peers_info.items():
                 peer_ip = info.get("ip")
@@ -152,7 +191,10 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
                 message = sub_socket.recv_json()
                 message_count += 1
                 sender = message.get("node_id", "unknown")
-                logging.info(f"[SUB] Received message #{message_count} from {sender}: {message.get('type')}")
+                message_image_id = message.get("image_id", "N/A")
+                print(
+                    f"[SUB: API_SUB] Received from {sender}: {message.get('type')} - Image #{message_image_id}"
+                )
 
                 # Add receive timestamp
                 message["recv_ts"] = recv_ts
@@ -163,15 +205,32 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
                     # Ignore flag == 0
                 elif message.get('type') == 'detection_results':
                     source_sender = message.get("sender") or sender
-                    sender_queue = pending_events.get(source_sender)
-                    if sender_queue and len(sender_queue) > 0:
-                        pending_event = sender_queue.popleft()
+                    detection_image_id = message.get("image_id")
+                    if detection_image_id is None:
+                        print(
+                            f"[API-SUB] detection_results from {source_sender} has no image_id; skipping correlation"
+                        )
+                        continue
+
+                    event_key = (source_sender, str(detection_image_id))
+                    pending_event = pending_events.pop(event_key, None)
+                    if pending_event:
+                        print(
+                            f"[API-SUB] Correlated detection_results for sender={source_sender}, image_id={detection_image_id}"
+                        )
                         pending_event["payload"]["event"]["detection_results"] = message
                         pending_event["payload"]["event"]["metadata"]["detection_ts"] = message.get("ts")
                         process_aggregated_event(alert_manager, pending_event["payload"])
-                        if not sender_queue:
-                            del pending_events[source_sender]
+                    else:
+                        print(
+                            f"[API-SUB] No pending event found for sender={source_sender}, image_id={detection_image_id}"
+                        )
                 elif message.get('type') == 'image' and sender in current_events:
+                    image_id = message.get("image_id")
+                    if image_id is None:
+                        print(f"[API-SUB] image message from {sender} has no image_id; skipping")
+                        continue
+
                     combined = {
                         'event': {
                             'motion_flag': current_events[sender],
@@ -181,24 +240,25 @@ def subscriber_loop(context, peers_info, stop_event, alert_manager):
                                 'node_id': sender,
                                 'event_ts': current_events[sender].get('ts'),
                                 'image_ts': message.get('ts'),
+                                'image_id': image_id,
                                 'detection_ts': None,
                             }
                         }
                     }
-                    if sender not in pending_events:
-                        pending_events[sender] = deque()
 
-                    pending_events[sender].append({
+                    event_key = (sender, str(image_id))
+                    pending_events[event_key] = {
                         "payload": combined,
                         "deadline_monotonic": time.monotonic() + detection_wait_seconds,
-                    })
+                    }
+                    print(f"[API-SUB] Queued image event for sender={sender}, image_id={image_id}")
                     del current_events[sender]
 
         except zmq.error.ContextTerminated:
             break
         except Exception as e:
             if not stop_event.is_set():
-                logging.error(f"[SUB] Error: {e}")
+                print(f"[ERROR][SUB] {e}")
             connected_endpoints.clear()
 
     sub_socket.close()
@@ -233,7 +293,7 @@ if __name__ == "__main__":
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        logging.info("[INFO] Shutting down...")
+        print("[INFO] Shutting down...")
     finally:
         stop_event.set()
         context.term()
