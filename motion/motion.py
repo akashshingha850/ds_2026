@@ -22,6 +22,7 @@ from config import (
     BLUR_SIGMA,
     KERNEL_SIZE,
     DISCOVERY_PORT_MOTION,
+    MOTION_IMAGE_PUBLISH_COOLDOWN,
 )
 from utils import ZMQNode
 
@@ -120,6 +121,8 @@ class MotionDetector(ZMQNode):
         logging.info("Starting motion detection... Press Ctrl+C to stop.")
 
         try:
+            last_publish_time = 0
+            publish_cooldown = MOTION_IMAGE_PUBLISH_COOLDOWN # configured cooldown
             while True:
                 in_bytes = process.stdout.read(bytes_per_frame)
                 
@@ -137,11 +140,20 @@ class MotionDetector(ZMQNode):
                 change_ratio = self.detect_motion(self.prev_blurred_frame, blurred_frame, PIXEL_DIFF_THRESHOLD)
                 
                 motion_detected = change_ratio is not None and change_ratio > MOTION_THRESHOLD
+                current_time = time.time()
 
                 if motion_detected and self.last_motion_state == 0:
                     event_ts = datetime.now().time().isoformat()
                     self.publish_motion_flag(1, event_ts)
                     self.publish_motion_image(frame, event_ts)
+                    last_publish_time = current_time
+                elif motion_detected and self.last_motion_state == 1:
+                    # Cooldown logic for continuous motion
+                    if current_time - last_publish_time >= publish_cooldown:
+                        event_ts = datetime.now().time().isoformat()
+                        # Optional: publish motion flag again if needed, else just image
+                        self.publish_motion_image(frame, event_ts)
+                        last_publish_time = current_time
                 elif not motion_detected and self.last_motion_state == 1:
                     event_ts = datetime.now().time().isoformat()
                     self.publish_motion_flag(0, event_ts)
