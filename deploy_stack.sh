@@ -1,11 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+
 # Fill this in once, or export DOCKERHUB_USERNAME in your shell.
-DOCKERHUB_USERNAME="mesbahul"
+DOCKERHUB_USERNAME="akashshingha"
 STACK_NAME="ds_2026"
 COMPOSE_FILE="docker-compose.yml"
 ALERT_ENV_FILE=".env.alert"
+
+# stop and remove existing stack if it exists
+if docker stack ls | grep -q "${STACK_NAME}"; then
+  echo "Removing existing stack ${STACK_NAME}..."
+  docker stack rm "${STACK_NAME}"
+  # Wait for the stack to be fully removed
+  while docker stack ls | grep -q "${STACK_NAME}"; do
+    echo "Waiting for stack ${STACK_NAME} to be removed..."
+    sleep 5
+  done
+fi
 
 if [[ -n "${DOCKERHUB_USERNAME:-}" && "${DOCKERHUB_USERNAME}" != "yourdockerhubusername" ]]; then
   export DOCKERHUB_USERNAME

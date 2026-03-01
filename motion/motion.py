@@ -28,7 +28,7 @@ from utils import ZMQNode
 
 def get_video_dimensions(url):
     """Probe the video stream and return width and height."""
-    retry_delay = 5  # seconds
+    retry_delay = 1  # seconds
     attempt = 1
     while True:
         try:
@@ -36,9 +36,11 @@ def get_video_dimensions(url):
             video_info = next(s for s in probe['streams'] if s['codec_type'] == 'video')
             width = int(video_info['width'])
             height = int(video_info['height'])
+            if width <= 0 or height <= 0:
+                return 0, 0  # Invalid dimensions, return 0,0 to indicate empty stream
             return width, height
-        except ffmpeg.Error as e:
-            print(f"ffmpeg.probe failed (attempt {attempt}): {e}")
+        except (ffmpeg.Error, StopIteration) as e:
+            print(f"Video dimension probe failed (attempt {attempt}): {e}")
             print("Retrying in {} seconds...".format(retry_delay))
             time.sleep(retry_delay)
             attempt += 1
@@ -107,7 +109,12 @@ class MotionDetector(ZMQNode):
         logging.info(f"[IMAGE_PUB:{self.node_id}] Listening on tcp://*:{MOTION_IMAGE_PORT}")
         logging.info(f"[PUB:{self.node_id}] Local IP: {self.get_local_ip()}")
 
-        width, height = get_video_dimensions(MOTION_URL)
+        while True:
+            width, height = get_video_dimensions(MOTION_URL)
+            if width > 0 and height > 0:
+                break
+            print("Stream has invalid dimensions (0x0), waiting for valid stream...")
+            time.sleep(1)
 
         process = (ffmpeg
             .input(MOTION_URL, rtsp_transport='udp')
@@ -133,37 +140,45 @@ class MotionDetector(ZMQNode):
                 
                 frame = np.frombuffer(in_bytes, np.uint8).reshape((height, width, 3))
 
-                frame_gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-                
-                blurred_frame = self.gaussian_blur(frame_gray, KERNEL_SIZE, BLUR_SIGMA)
-                
-                change_ratio = self.detect_motion(self.prev_blurred_frame, blurred_frame, PIXEL_DIFF_THRESHOLD)
-                
-                motion_detected = change_ratio is not None and change_ratio > MOTION_THRESHOLD
-                current_time = time.time()
+                if frame.size == 0:
+                    print("Empty frame received, skipping...")
+                    continue
 
-                if motion_detected and self.last_motion_state == 0:
-                    event_ts = datetime.now().time().isoformat()
-                    self.publish_motion_flag(1, event_ts)
-                    self.publish_motion_image(frame, event_ts)
-                    last_publish_time = current_time
-                elif motion_detected and self.last_motion_state == 1:
-                    # Cooldown logic for continuous motion
-                    if current_time - last_publish_time >= publish_cooldown:
+                try:
+                    frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    
+                    blurred_frame = self.gaussian_blur(frame_gray, KERNEL_SIZE, BLUR_SIGMA)
+                    
+                    change_ratio = self.detect_motion(self.prev_blurred_frame, blurred_frame, PIXEL_DIFF_THRESHOLD)
+                    
+                    motion_detected = change_ratio is not None and change_ratio > MOTION_THRESHOLD
+                    current_time = time.time()
+
+                    if motion_detected and self.last_motion_state == 0:
                         event_ts = datetime.now().time().isoformat()
-                        # Optional: publish motion flag again if needed, else just image
+                        self.publish_motion_flag(1, event_ts)
                         self.publish_motion_image(frame, event_ts)
                         last_publish_time = current_time
-                elif not motion_detected and self.last_motion_state == 1:
-                    event_ts = datetime.now().time().isoformat()
-                    self.publish_motion_flag(0, event_ts)
-                    print("Motion ended: sent flag 0")
+                    elif motion_detected and self.last_motion_state == 1:
+                        # Cooldown logic for continuous motion
+                        if current_time - last_publish_time >= publish_cooldown:
+                            event_ts = datetime.now().time().isoformat()
+                            # Optional: publish motion flag again if needed, else just image
+                            self.publish_motion_image(frame, event_ts)
+                            last_publish_time = current_time
+                    elif not motion_detected and self.last_motion_state == 1:
+                        event_ts = datetime.now().time().isoformat()
+                        self.publish_motion_flag(0, event_ts)
+                        print("Motion ended: sent flag 0")
 
-                self.prev_blurred_frame = blurred_frame
-                self.last_motion_state = 1 if motion_detected else 0
+                    self.prev_blurred_frame = blurred_frame
+                    self.last_motion_state = 1 if motion_detected else 0
 
-                if change_ratio is not None and motion_detected:
-                    print(f"Motion ratio: {change_ratio:.4f} - {'MOTION DETECTED' if motion_detected else 'No motion'}")
+                    if change_ratio is not None and motion_detected:
+                        print(f"Motion ratio: {change_ratio:.4f} - {'MOTION DETECTED' if motion_detected else 'No motion'}")
+                except Exception as e:
+                    logging.error(f"Error processing frame: {e}")
+                    continue
 
         except KeyboardInterrupt:
             logging.info("User stopped motion detection with Ctrl+C.")

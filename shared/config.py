@@ -28,7 +28,7 @@ MOTION_FLAG_PORT = 5556
 MOTION_IMAGE_PORT = 5557
 #MOTION_URL = 'rtsp://192.168.144.25:8554/main.264'  # SIYI Camera RTSP URL
 # MOTION_URL = 'rtsp://127.0.0.1:8554/stream' #  RTSP URL for MediaMTX testing
-MOTION_URL = 'rtsp://192.168.144.203:8554/playback'
+MOTION_URL = 'rtsp://192.168.144.45:8554/playback'
 #MOTION_URL = 'rtsp://172.20.10.2:31555/nvstream/opt/store/nvstreamer_videos/ccfootage.mp4' # Local RTSP URL for testing on Jetson Nano with local video file
 
 
