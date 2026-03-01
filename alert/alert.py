@@ -23,8 +23,6 @@ from config import (
     ALERTS_ENABLED,
     ALERT_COOLDOWN_SECONDS,
     ALERT_DRY_RUN,
-    ALERT_ALLOW_MOTION_ONLY,
-    ALERT_DETECTION_WAIT_SECONDS,
     ALERT_TELEGRAM_ENABLED,
     ALERT_TELEGRAM_ATTACH_IMAGE,
     ALERT_TELEGRAM_BOT_TOKEN,
@@ -46,7 +44,6 @@ class AlertManager:
         self.on_alert = on_alert
         self.lock = threading.Lock()
         self.recent_alerts = {}
-        self.allow_motion_only = ALERT_ALLOW_MOTION_ONLY
 
         self.telegram_enabled = ALERT_TELEGRAM_ENABLED
         self.telegram_attach_image = ALERT_TELEGRAM_ATTACH_IMAGE
@@ -110,47 +107,32 @@ class AlertManager:
         node_id = metadata.get("node_id") or motion_flag.get("node_id") or "unknown-node"
         event_ts = metadata.get("event_ts") or motion_flag.get("ts") or "unknown-ts"
         triggered_classes = self._extract_triggered_classes(detections)
-        has_motion_signal = bool(event.get("image")) or bool(motion_flag.get("flag") == 1)
 
-        if not triggered_classes and not (self.allow_motion_only and has_motion_signal):
+        if not triggered_classes:
             return
 
-        effective_classes = triggered_classes if triggered_classes else ["motion"]
-
         now = time.monotonic()
-        if self._was_sent_recently(node_id, effective_classes, now):
+        if self._was_sent_recently(node_id, triggered_classes, now):
             self._pass_summary_data(event_ts, node_id, triggered_classes)
             return
 
         image_payload = event.get("image", {}) if isinstance(event.get("image"), dict) else {}
         image_bytes = self._decode_image(image_payload)
-        if triggered_classes:
-            alert_type = "immediate"
-            severity = "standard"
-            subject = f"[ALERT:STANDARD] {', '.join(triggered_classes)} on {node_id}"
-            trigger_classes = [{"class": name, "severity": "standard"} for name in triggered_classes]
-            detected_classes = [{"class": name} for name in triggered_classes]
-        else:
-            alert_type = "motion"
-            severity = "motion"
-            subject = f"[ALERT:MOTION] Motion on {node_id}"
-            trigger_classes = [{"class": "motion", "severity": "motion"}]
-            detected_classes = []
-
         payload_out = {
-            "type": alert_type,
-            "severity": severity,
+            "type": "immediate",
+            "severity": "standard",
             "node_id": node_id,
             "event_ts": event_ts,
-            "trigger_classes": trigger_classes,
-            "detected_classes": detected_classes,
+            "trigger_classes": [{"class": name, "severity": "standard"} for name in triggered_classes],
+            "detected_classes": [{"class": name} for name in triggered_classes],
             "image_bytes": image_bytes,
         }
+        subject = f"[ALERT:STANDARD] {', '.join(triggered_classes)} on {node_id}"
         body = (
-            f"Type: {alert_type}\n"
-            f"Severity: {severity}\n"
+            f"Type: immediate\n"
+            f"Severity: standard\n"
             f"Node: {node_id}\n"
-            f"Trigger Classes: {', '.join(effective_classes)}\n"
+            f"Trigger Classes: {', '.join(triggered_classes)}\n"
             f"Event TS: {event_ts}"
         )
         self._dispatch(subject, body, payload_out)
@@ -208,7 +190,7 @@ class AlertManager:
             if response.status_code != 200:
                 logging.error(f"Telegram alert failed: {response.status_code} {response.text}")
             else:
-                pass  # Removed success logging
+                logging.info(f"[ALERT_SEND] Telegram sent successfully - status={response.status_code}")
         except Exception as exc:
             logging.error(f"Telegram alert failed: {exc}")
 
@@ -220,7 +202,7 @@ class AlertManager:
             if not (200 <= response.status_code < 300):
                 logging.error(f"Webhook alert failed: {response.status_code} {response.text}")
             else:
-                pass  # Removed success logging
+                logging.info(f"[ALERT_SEND] Webhook sent successfully - status={response.status_code}")
         except Exception as exc:
             logging.error(f"Webhook alert failed: {exc}")
 
@@ -266,11 +248,15 @@ class AlertNode(ZMQNode):
             alert_send_ts = datetime.now().isoformat()
             queue_age_s = _compute_queue_age_seconds(event_ts, alert_send_ts)
             queue_age_text = f"{queue_age_s:.3f}s" if queue_age_s is not None else "unknown"
-            node_id = metadata.get("node_id") or motion_flag.get("node_id") or "unknown-node"
+
+            node_sender = metadata.get("node_id") or motion_flag.get("node_id") or "unknown-node"
+            receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
+            node_receiver = f"{receiver_host}-alert"
 
             logging.info(
-                f" {node_id} recieved Image #{image_id} - Event TS: {event_ts} - Recv TS: {recv_ts} - Detection TS: {detection_ts} "
-                f" - Alert Send TS: {alert_send_ts} - Queue Age: {queue_age_text} - Detections: {len(detections)}"
+                f"[{node_receiver}] received Image #{image_id} from [{node_sender}] "
+                f"- Event TS: {event_ts} - Recv TS: {recv_ts} - Detection TS: {detection_ts} "
+                f"- Alert Send TS: {alert_send_ts} - Queue Age: {queue_age_text} - Detections: {len(detections)}"
             )
 
             self.alert_manager.process_event(payload)
@@ -281,34 +267,31 @@ class AlertNode(ZMQNode):
         endpoint = f"tcp://{ip}:{port}"
         if endpoint in self.connected_endpoints:
             return
-        try:
-            sub_socket.connect(endpoint)
-            self.connected_endpoints.add(endpoint)
-            logging.info(f"[SUB:{self.node_id}] Connected to {label} at {endpoint}")
-            time.sleep(0.2)
-        except Exception as exc:
-            logging.warning(f"{self.node_id}: failed to connect to {label}: {exc}")
+        sub_socket.connect(endpoint)
+        self.connected_endpoints.add(endpoint)
+        receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
+        node_receiver = f"{receiver_host}-alert"
+        logging.info(f"[{node_receiver}] Connected to {label} at {endpoint}")
+        time.sleep(0.2)
 
     def subscriber_loop(self):
         sub_socket = self.context.socket(zmq.SUB)
         sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
-        detection_wait_seconds = max(ALERT_DETECTION_WAIT_SECONDS, 0.0)
+        motion_host_fallback = os.environ.get("MOTION_HOST", "motion")
+        detection_coco_host_fallback = os.environ.get("DETECTION_COCO_HOST", "detection_coco")
+        detection_fire_host_fallback = os.environ.get("DETECTION_FIRE_HOST", "detection_fire")
+
+        detection_wait_seconds = 2.0
         message_count = 0
         current_events = {}
         pending_events = {}
 
-        motion_flag_host = os.environ.get("MOTION_FLAG_HOST") or os.environ.get("MOTION_HOST", "motion")
-        motion_image_host = os.environ.get("MOTION_IMAGE_HOST") or os.environ.get("MOTION_HOST", "motion")
-        detection_coco_host = os.environ.get("DETECTION_COCO_HOST", "detection_coco")
-        detection_fire_host = os.environ.get("DETECTION_FIRE_HOST", "detection_fire")
-
-        self.connect_endpoint(sub_socket, motion_flag_host, MOTION_FLAG_PORT, "motion-flag-fallback")
-        self.connect_endpoint(sub_socket, motion_image_host, MOTION_IMAGE_PORT, "motion-image-fallback")
-        self.connect_endpoint(sub_socket, detection_coco_host, DETECTION_COCO_PORT, "detection-coco-fallback")
-        self.connect_endpoint(sub_socket, detection_fire_host, DETECTION_FIRE_PORT, "detection-fire-fallback")
-        self.connect_endpoint(sub_socket, "127.0.0.1", MOTION_FLAG_PORT, "localhost-motion-flag")
-        self.connect_endpoint(sub_socket, "127.0.0.1", MOTION_IMAGE_PORT, "localhost-motion-image")
+        # Hybrid fallback: connect to service DNS endpoints as backup.
+        self.connect_endpoint(sub_socket, motion_host_fallback, MOTION_FLAG_PORT, "fallback-motion-flag")
+        self.connect_endpoint(sub_socket, motion_host_fallback, MOTION_IMAGE_PORT, "fallback-motion-image")
+        self.connect_endpoint(sub_socket, detection_coco_host_fallback, DETECTION_COCO_PORT, "fallback-detection-coco")
+        self.connect_endpoint(sub_socket, detection_fire_host_fallback, DETECTION_FIRE_PORT, "fallback-detection-fire")
 
         while not self.stop_event.is_set():
             try:
@@ -341,8 +324,10 @@ class AlertNode(ZMQNode):
                     message = sub_socket.recv_json()
                     message_count += 1
                     sender = message.get("node_id", "unknown")
-                    message_image_id = message.get("image_id", "N/A")
-                    print(f"[SUB:{self.node_id}] Received message #{message_count} from {sender}: {message.get('type')} - Image #{message_image_id}")
+                    # message_image_id = message.get("image_id", "N/A")
+                    # receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
+                    # node_receiver = f"{receiver_host}-alert"
+                    # logging.info(f"[{node_receiver}] Received message #{message_count} from {sender}: {message.get('type')} - Image #{message_image_id}")
 
                     # Add receive timestamp
                     message["recv_ts"] = recv_ts
@@ -355,22 +340,30 @@ class AlertNode(ZMQNode):
                         source_sender = message.get("sender") or sender
                         detection_image_id = message.get("image_id")
                         if detection_image_id is None:
-                            logging.debug(f"{self.node_id}: detection_results message without image_id: {message}")
+                            receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
+                            node_receiver = f"{receiver_host}-alert"
+                            logging.warning(f"[{node_receiver}] detection_results from {source_sender} has no image_id; skipping correlation")
                             continue
 
                         event_key = (source_sender, str(detection_image_id))
                         pending_event = pending_events.pop(event_key, None)
                         if pending_event:
-                            logging.info(f"[SUB:{self.node_id}] Correlated detection_results for sender={source_sender}, image_id={detection_image_id}")
+                            receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
+                            node_receiver = f"{receiver_host}-alert"
+                            logging.info(f"[{node_receiver}] Correlated detection_results for sender={source_sender}, image_id={detection_image_id}")
                             pending_event["payload"]["event"]["detection_results"] = message
                             pending_event["payload"]["event"]["metadata"]["detection_ts"] = message.get("ts")
                             self.process_aggregated_event(pending_event["payload"])
                         else:
-                            logging.warning(f"{self.node_id}: no pending event found for sender={source_sender}, image_id={detection_image_id}")
+                            receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
+                            node_receiver = f"{receiver_host}-alert"
+                            logging.warning(f"[{node_receiver}] No pending event found for sender={source_sender}, image_id={detection_image_id}")
                     elif message.get('type') == 'image' and sender in current_events:
                         image_id = message.get("image_id")
                         if image_id is None:
-                            logging.warning(f"{self.node_id}: image message from {sender} has no image_id; skipping")
+                            receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
+                            node_receiver = f"{receiver_host}-alert"
+                            logging.warning(f"[{node_receiver}] image message from {sender} has no image_id; skipping")
                             continue
 
                         combined = {
@@ -393,14 +386,18 @@ class AlertNode(ZMQNode):
                             "payload": combined,
                             "deadline_monotonic": time.monotonic() + detection_wait_seconds,
                         }
-                        logging.info(f"[SUB:{self.node_id}] Queued image event for sender={sender}, image_id={image_id}")
+                        receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
+                        node_receiver = f"{receiver_host}-alert"
+                        logging.info(f"[{node_receiver}] Queued image event for sender={sender}, image_id={image_id}")
                         del current_events[sender]
 
             except zmq.error.ContextTerminated:
                 break
             except Exception as e:
                 if not self.stop_event.is_set():
-                    logging.error(f"{self.node_id}:[SUB] error: {e}")
+                    receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
+                    node_receiver = f"{receiver_host}-alert"
+                    logging.error(f"[{node_receiver}] Error: {e}")
 
         sub_socket.close()
 
