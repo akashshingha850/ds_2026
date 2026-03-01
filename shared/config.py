@@ -11,6 +11,16 @@ def _env_bool(name, default):
 	return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(name, default):
+	value = os.getenv(name)
+	if value is None:
+		return default
+	try:
+		return float(value)
+	except ValueError:
+		return default
+
+
 ##
 # -----------------------------------------------------------------------------
 # PEER DISCOVERY (Shared UDP Broadcast Settings)
@@ -94,6 +104,10 @@ ALERT_OBJECT_INACTIVE_SECONDS = 30  # Consider class "new" again only after this
 ALERT_IMMEDIATE_CLASSES = ["weapon", "fire"]
 ALERT_FIRST_HIT_IMMEDIATE = True  # Send first accepted detection immediately for any class
 ALERT_EXCLUDED_NODE_PREFIXES = ["smtp-", "live-email-test"]  # Prevent test/synthetic node IDs from sending alerts
+
+# Alert behavior
+ALERT_ALLOW_MOTION_ONLY = _env_bool("ALERT_ALLOW_MOTION_ONLY", True)
+ALERT_DETECTION_WAIT_SECONDS = _env_float("ALERT_DETECTION_WAIT_SECONDS", 2.0)
 
 # Telegram bot settings
 ALERT_TELEGRAM_ENABLED = _env_bool("ALERT_TELEGRAM_ENABLED", True)

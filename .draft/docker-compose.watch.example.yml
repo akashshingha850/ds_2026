@@ -1,0 +1,34 @@
+# Docker Compose Watch configuration for hot-reloading
+# See https://docs.docker.com/compose/file-watch/
+
+# Add this to your docker-compose.yml under the relevant service(s):
+
+# Example for motion service:
+#
+# x-watch-motion:
+#   watch:
+#     - path: ./motion
+#       action: rebuild
+#     - path: ./shared
+#       action: rebuild
+#
+# Example for detection_coco service:
+#
+# x-watch-detection_coco:
+#   watch:
+#     - path: ./detection_coco
+#       action: rebuild
+#     - path: ./shared
+#       action: rebuild
+#
+# To enable watch, add the following to each service:
+#
+# motion:
+#   ...existing config...
+#   <<: *x-watch-motion
+#
+# detection_coco:
+#   ...existing config...
+#   <<: *x-watch-detection_coco
+#
+# For more details, see the official documentation.

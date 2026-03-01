@@ -68,7 +68,7 @@ services:
   alert:
     image: ${DOCKERHUB_USERNAME}/ds-alert:latest
     env_file:
-      - ./.env.alert
+      - ./.env
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
@@ -84,24 +84,24 @@ services:
         condition: any
 
 
-  system_monitor:
-    image: ${DOCKERHUB_USERNAME}/ds-system-monitor:latest
-    volumes:
-      - shared_data:/app/shared
-      - ./logs:/app/logs
-      - /etc/hostname:/host_hostname:ro
-    networks:
-      - eyes_edge_net
-    # depends_on:
-      # motion:
-        # condition: service_healthy
-    deploy:
-      mode: global
-      labels:
-        - com.ds.stack=ds_2026
-        - com.ds.service=system_monitor
-      restart_policy:
-        condition: any
+  # system_monitor:
+  #   image: ${DOCKERHUB_USERNAME}/ds-system-monitor:latest
+  #   volumes:
+  #     - shared_data:/app/shared
+  #     - ./logs:/app/logs
+  #     - /etc/hostname:/host_hostname:ro
+  #   networks:
+  #     - eyes_edge_net
+  #   # depends_on:
+  #     # motion:
+  #       # condition: service_healthy
+  #   deploy:
+  #     mode: global
+  #     labels:
+  #       - com.ds.stack=ds_2026
+  #       - com.ds.service=system_monitor
+  #     restart_policy:
+  #       condition: any
         
   # rebalancer:
   #   image: docker:27-cli

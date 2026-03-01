@@ -10,13 +10,13 @@ When running via Docker Compose, each service mounts the host `/etc/hostname` fi
 
 ### Alert Telegram settings via env file
 
-1. Create the alert env file from template:
+1. Create the env file from template:
 
 ```bash
-cp .env.alert.example .env.alert
+cp .env.example .env
 ```
 
-2. Edit `.env.alert` and set your real values:
+2. Edit `.env` and set your real values:
 
 ```env
 ALERT_TELEGRAM_ENABLED=true
@@ -25,7 +25,7 @@ ALERT_TELEGRAM_CHAT_ID=YOUR_TELEGRAM_CHAT_ID
 ALERT_TELEGRAM_ATTACH_IMAGE=true
 ```
 
-3. Deploy as usual. `deploy_stack.sh` will load `.env.alert` before `docker stack deploy`.
+3. Deploy as usual. `deploy_stack.sh` loads `.env` before `docker stack deploy`.
 
 ### 1. Install ZeroMQ on all Raspberry Pis
 
