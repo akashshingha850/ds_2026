@@ -125,7 +125,8 @@ class MotionDetector(ZMQNode):
 
         bytes_per_frame = width * height * 3
 
-        logging.info("Starting motion detection... Press Ctrl+C to stop.")
+        logging.info(f"{self.node_id} Starting motion detection... Press Ctrl+C to stop.")
+
 
         try:
             last_publish_time = 0

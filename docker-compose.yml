@@ -21,49 +21,49 @@ services:
       restart_policy:
         condition: any
 
-  # detection_coco:
-  #   image: ${DOCKERHUB_USERNAME}/ds-detection-coco:latest
-  #   volumes:
-  #     - shared_data:/app/shared
-  #     - ./logs:/app/logs
-  #     - /etc/hostname:/host_hostname:ro
-  #   networks:
-  #     - eyes_edge_net
-  #   # depends_on:
-  #     # motion:
-  #       # condition: service_healthy
-  #   deploy:
-  #     replicas: 1
-  #     labels:
-  #       - com.ds.stack=ds_2026
-  #       - com.ds.service=detection_coco
-  #     restart_policy:
-  #       condition: any
-  #     placement:
-  #       constraints:
-  #         - node.hostname != pi3
+  detection_coco:
+    image: ${DOCKERHUB_USERNAME}/ds-detection-coco:latest
+    volumes:
+      - shared_data:/app/shared
+      - ./logs:/app/logs
+      - /etc/hostname:/host_hostname:ro
+    networks:
+      - eyes_edge_net
+    # depends_on:
+      # motion:
+        # condition: service_healthy
+    deploy:
+      replicas: 1
+      labels:
+        - com.ds.stack=ds_2026
+        - com.ds.service=detection_coco
+      restart_policy:
+        condition: any
+      placement:
+        constraints:
+          - node.hostname != pi3
 
-  # detection_fire:
-  #   image: ${DOCKERHUB_USERNAME}/ds-detection-fire:latest
-  #   volumes:
-  #     - shared_data:/app/shared
-  #     - ./logs:/app/logs
-  #     - /etc/hostname:/host_hostname:ro
-  #   networks:
-  #     - eyes_edge_net
-  #   # depends_on:
-  #     # motion:
-  #       # condition: service_healthy
-  #   deploy:
-  #     replicas: 1
-  #     labels:
-  #       - com.ds.stack=ds_2026
-  #       - com.ds.service=detection_fire
-  #     restart_policy:
-  #       condition: any
-  #     placement:
-  #       constraints:
-  #         - node.hostname != pi3
+  detection_fire:
+    image: ${DOCKERHUB_USERNAME}/ds-detection-fire:latest
+    volumes:
+      - shared_data:/app/shared
+      - ./logs:/app/logs
+      - /etc/hostname:/host_hostname:ro
+    networks:
+      - eyes_edge_net
+    # depends_on:
+      # motion:
+        # condition: service_healthy
+    deploy:
+      replicas: 1
+      labels:
+        - com.ds.stack=ds_2026
+        - com.ds.service=detection_fire
+      restart_policy:
+        condition: any
+      placement:
+        constraints:
+          - node.hostname != pi3
 
   alert:
     image: ${DOCKERHUB_USERNAME}/ds-alert:latest

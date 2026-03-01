@@ -45,10 +45,10 @@ fi
 
 echo "[1/3] Building images..."
 docker build -t "${DOCKERHUB_USERNAME}/ds-motion:latest" -f motion/Dockerfile .
-# docker build -t "${DOCKERHUB_USERNAME}/ds-detection-coco:latest" -f detection_coco/Dockerfile .
-# docker build -t "${DOCKERHUB_USERNAME}/ds-detection-fire:latest" -f detection_fire/Dockerfile .
+docker build -t "${DOCKERHUB_USERNAME}/ds-detection-coco:latest" -f detection_coco/Dockerfile .
+docker build -t "${DOCKERHUB_USERNAME}/ds-detection-fire:latest" -f detection_fire/Dockerfile .
 docker build -t "${DOCKERHUB_USERNAME}/ds-alert:latest" -f alert/Dockerfile .
-# docker build -t "${DOCKERHUB_USERNAME}/ds-system-monitor:latest" -f system_monitor/Dockerfile .
+docker build -t "${DOCKERHUB_USERNAME}/ds-system-monitor:latest" -f system_monitor/Dockerfile .
 
 echo "[2/3] Pushing images to Docker Hub..."
 docker push "${DOCKERHUB_USERNAME}/ds-motion:latest"

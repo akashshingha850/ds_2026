@@ -208,7 +208,7 @@ class AlertManager:
             if response.status_code != 200:
                 logging.error(f"Telegram alert failed: {response.status_code} {response.text}")
             else:
-                logging.info(f"[ALERT_SEND] Telegram sent successfully - status={response.status_code}")
+                pass  # Removed success logging
         except Exception as exc:
             logging.error(f"Telegram alert failed: {exc}")
 
@@ -220,7 +220,7 @@ class AlertManager:
             if not (200 <= response.status_code < 300):
                 logging.error(f"Webhook alert failed: {response.status_code} {response.text}")
             else:
-                logging.info(f"[ALERT_SEND] Webhook sent successfully - status={response.status_code}")
+                pass  # Removed success logging
         except Exception as exc:
             logging.error(f"Webhook alert failed: {exc}")
 
@@ -269,8 +269,8 @@ class AlertNode(ZMQNode):
             node_id = metadata.get("node_id") or motion_flag.get("node_id") or "unknown-node"
 
             logging.info(
-                f"[ALERT_PIPELINE] Node: {node_id} recieved Image #{image_id} - Event TS: {event_ts} - Recv TS: {recv_ts} - Detection TS: {detection_ts} "
-                f"- Alert Send TS: {alert_send_ts} - Queue Age: {queue_age_text} - Detections: {len(detections)}"
+                f" {node_id} recieved Image #{image_id} - Event TS: {event_ts} - Recv TS: {recv_ts} - Detection TS: {detection_ts} "
+                f" - Alert Send TS: {alert_send_ts} - Queue Age: {queue_age_text} - Detections: {len(detections)}"
             )
 
             self.alert_manager.process_event(payload)
@@ -284,10 +284,10 @@ class AlertNode(ZMQNode):
         try:
             sub_socket.connect(endpoint)
             self.connected_endpoints.add(endpoint)
-            logging.info(f"[SUB] Connected to {label} at {endpoint}")
+            logging.info(f"[SUB:{self.node_id}] Connected to {label} at {endpoint}")
             time.sleep(0.2)
         except Exception as exc:
-            logging.warning(f"[SUB] Failed to connect to {label} at {endpoint}: {exc}")
+            logging.warning(f"{self.node_id}: failed to connect to {label}: {exc}")
 
     def subscriber_loop(self):
         sub_socket = self.context.socket(zmq.SUB)
@@ -342,7 +342,7 @@ class AlertNode(ZMQNode):
                     message_count += 1
                     sender = message.get("node_id", "unknown")
                     message_image_id = message.get("image_id", "N/A")
-                    logging.info(f"[SUB] Received message #{message_count} from {sender}: {message.get('type')} - Image #{message_image_id}")
+                    print(f"[SUB:{self.node_id}] Received message #{message_count} from {sender}: {message.get('type')} - Image #{message_image_id}")
 
                     # Add receive timestamp
                     message["recv_ts"] = recv_ts
@@ -355,22 +355,22 @@ class AlertNode(ZMQNode):
                         source_sender = message.get("sender") or sender
                         detection_image_id = message.get("image_id")
                         if detection_image_id is None:
-                            logging.warning(f"[SUB] detection_results from {source_sender} has no image_id; skipping correlation")
+                            logging.debug(f"{self.node_id}: detection_results message without image_id: {message}")
                             continue
 
                         event_key = (source_sender, str(detection_image_id))
                         pending_event = pending_events.pop(event_key, None)
                         if pending_event:
-                            logging.info(f"[SUB] Correlated detection_results for sender={source_sender}, image_id={detection_image_id}")
+                            logging.info(f"[SUB:{self.node_id}] Correlated detection_results for sender={source_sender}, image_id={detection_image_id}")
                             pending_event["payload"]["event"]["detection_results"] = message
                             pending_event["payload"]["event"]["metadata"]["detection_ts"] = message.get("ts")
                             self.process_aggregated_event(pending_event["payload"])
                         else:
-                            logging.warning(f"[SUB] No pending event found for sender={source_sender}, image_id={detection_image_id}")
+                            logging.warning(f"{self.node_id}: no pending event found for sender={source_sender}, image_id={detection_image_id}")
                     elif message.get('type') == 'image' and sender in current_events:
                         image_id = message.get("image_id")
                         if image_id is None:
-                            logging.warning(f"[SUB] image message from {sender} has no image_id; skipping")
+                            logging.warning(f"{self.node_id}: image message from {sender} has no image_id; skipping")
                             continue
 
                         combined = {
@@ -393,14 +393,14 @@ class AlertNode(ZMQNode):
                             "payload": combined,
                             "deadline_monotonic": time.monotonic() + detection_wait_seconds,
                         }
-                        logging.info(f"[SUB] Queued image event for sender={sender}, image_id={image_id}")
+                        logging.info(f"[SUB:{self.node_id}] Queued image event for sender={sender}, image_id={image_id}")
                         del current_events[sender]
 
             except zmq.error.ContextTerminated:
                 break
             except Exception as e:
                 if not self.stop_event.is_set():
-                    logging.error(f"[SUB] Error: {e}")
+                    logging.error(f"{self.node_id}:[SUB] error: {e}")
 
         sub_socket.close()
 
