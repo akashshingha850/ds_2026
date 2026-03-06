@@ -82,6 +82,7 @@ class MotionDetector(ZMQNode):
         })
 
     def publish_motion_image(self, frame, timestamp):
+        t_start = time.time()
         success, encoded_img = cv2.imencode('.jpg', frame)
         if success:
             image_bytes = encoded_img.tobytes()
@@ -96,7 +97,9 @@ class MotionDetector(ZMQNode):
                 "image_id": self.image_id,
             }
             self.image_pub.send_json(message)
-            logging.info(f"{self.node_id} published image #{self.image_id} ({image_size_kb:.2f} KB) at {timestamp} ")
+            t_end = time.time()
+            publish_latency_ms = (t_end - t_start) * 1000
+            logging.info(f"{self.node_id} published image #{self.image_id} ({image_size_kb:.2f} KB) at {timestamp} | publish latency: {publish_latency_ms:.3f} ms (start={t_start:.6f}, end={t_end:.6f})")
             self.image_id += 1
         else:
             logging.error("Failed to encode image")
@@ -146,7 +149,8 @@ class MotionDetector(ZMQNode):
                     continue
 
                 try:
-                    
+                    t_start = time.time()
+
                     frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     
                     blurred_frame = self.gaussian_blur(frame_gray, KERNEL_SIZE, BLUR_SIGMA)
@@ -154,7 +158,12 @@ class MotionDetector(ZMQNode):
                     change_ratio = self.detect_motion(self.prev_blurred_frame, blurred_frame, PIXEL_DIFF_THRESHOLD)
                     
                     motion_detected = change_ratio is not None and change_ratio > MOTION_THRESHOLD
-                    current_time = time.time()
+
+                    t_end = time.time()
+                    detection_latency_ms = (t_end - t_start) * 1000
+                    logging.info(f"Detection latency: {detection_latency_ms:.3f} ms (start={t_start:.6f}, end={t_end:.6f})")
+
+                    current_time = t_end
 
                     if motion_detected and self.last_motion_state == 0:
                         event_ts = datetime.now().time().isoformat()
