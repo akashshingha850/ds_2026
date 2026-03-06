@@ -58,10 +58,14 @@ set_cooldown() {
 # ============================================================================
 # Docker Functions
 # ============================================================================
-get_stack_services() {
-  docker service ls --format '{{.Name}}' 2>/dev/null \
+
+# Get only replicated services (skip global)
+get_replicated_stack_services() {
+  docker service ls --format '{{.Name}} {{.Mode}}' 2>/dev/null \
     | grep -E "^${STACK_NAME}_" \
     | grep -v -E "^${STACK_NAME}_rebalancer$" \
+    | grep 'replicated' \
+    | awk '{print $1}' \
     | tr '\n' ' ' | sed 's/ $//'
 }
 
@@ -93,7 +97,7 @@ count_services_on_node() {
 }
 
 do_rebalance() {
-  services=$(get_stack_services)
+  services=$(get_replicated_stack_services)
   nodes=$(get_swarm_nodes)
   [ -z "$services" ] && return
   [ -z "$nodes" ] && return

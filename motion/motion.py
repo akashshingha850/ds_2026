@@ -161,7 +161,7 @@ class MotionDetector(ZMQNode):
 
                     t_end = time.time()
                     detection_latency_ms = (t_end - t_start) * 1000
-                    logging.info(f"Detection latency: {detection_latency_ms:.3f} ms (start={t_start:.6f}, end={t_end:.6f})")
+                    print(f"Detection latency: {detection_latency_ms:.3f} ms (start={t_start:.6f}, end={t_end:.6f})")
 
                     current_time = t_end
 

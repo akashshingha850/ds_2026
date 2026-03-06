@@ -108,28 +108,29 @@ services:
       restart_policy:
         condition: any
         
-  # rebalancer:
-  #   image: docker:27-cli
-  #   configs:
-  #     - source: rebalancer_script
-  #       target: /rebalancer.sh
-  #       mode: 0555
-  #   environment:
-  #     STACK_NAME: ds_2026
-  #     POLL_SECONDS: "15"
-  #     COOLDOWN_SECONDS: "60"
-  #   volumes:
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   command: ["sh", "/rebalancer.sh"]
-  #   deploy:
-  #     replicas: 1
-  #     placement:
-  #       constraints:
-  #         - node.role == manager
-  #     restart_policy:
-  #       condition: any
-  #       delay: 5s
-  #       max_attempts: 0
+  rebalancer:
+    image: docker:27-cli
+    configs:
+      - source: rebalancer_script
+        target: /rebalancer.sh
+        mode: 0555
+    environment:
+      STACK_NAME: ds_2026
+      POLL_SECONDS: "15"
+      COOLDOWN_SECONDS: "60"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["sh", "/rebalancer.sh"]
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+          - node.hostname != pi3
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 0
 
   zswarm-dashboard:
     image: mohsenasm/swarm-dashboard:latest
@@ -178,6 +179,6 @@ networks:
 volumes:
   shared_data:
 
-# configs:
-#   rebalancer_script:
-#     file: ./rebalancer/rebalancer.sh
+configs:
+  rebalancer_script:
+    file: ./rebalancer/rebalancer.sh

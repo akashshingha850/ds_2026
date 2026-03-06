@@ -55,7 +55,7 @@ docker push "${DOCKERHUB_USERNAME}/ds-motion:latest"
 # docker push "${DOCKERHUB_USERNAME}/ds-detection-coco:latest"
 # docker push "${DOCKERHUB_USERNAME}/ds-detection-fire:latest"
 # docker push "${DOCKERHUB_USERNAME}/ds-alert:latest"
-docker push "${DOCKERHUB_USERNAME}/ds-system-monitor:latest"
+# docker push "${DOCKERHUB_USERNAME}/ds-system-monitor:latest"
 
 echo "[3/3] Deploying Docker stack..."
 docker stack deploy --with-registry-auth -c docker-compose.yml ds_2026
