@@ -1,133 +1,285 @@
-# ZeroMQ Communication Test - 3 Raspberry Pi Devices
+# Distributed Surveillance System
 
-Simple test to verify ZeroMQ communication between gateway and 3 edge devices.
+An AI-powered distributed video surveillance system running on a 3-node Raspberry Pi Docker Swarm cluster. It streams live video from a SIYI A8 Mini IP camera, detects motion and objects (including fire and smoke) using NCNN-optimised YOLO models, and dispatches real-time Telegram alerts — all coordinated over ZeroMQ pub/sub messaging.
 
-## Docker hostname and logs
+## Architecture
 
-When running via Docker Compose, each service mounts the host `/etc/hostname` file as `/host_hostname` (read-only). The shared logger uses this value for the log filename, so logs are grouped per device (for example: `logs/my-pi-hostname.log`) without hardcoding environment variables.
+![](.result/charts/architecture.png)
 
-## Setup
+Messages are correlated end-to-end via a per-frame `image_id`. The alert service waits up to 2 s for detection results after a motion image arrives, then dispatches — or fires immediately for `fire` / `weapon` class detections.
 
-### Alert Telegram settings via env file
+Peer discovery uses UDP broadcast on `255.255.255.255`. Services fall back to Docker Swarm DNS hostnames (`motion`, `detection_coco`, etc.) if no UDP peer is found.
 
-1. Create the env file from template:
+## Services
+
+| Service | Image | Placement | Role |
+|---------|-------|-----------|------|
+| `motion` | `ds-motion` | NOT pi3 | RTSP capture, frame differencing, publishes motion flag + JPEG frames |
+| `detection_coco` | `ds-detection-coco` | NOT pi3 | YOLOv8n NCNN inference on 80 COCO classes |
+| `detection_fire` | `ds-detection-fire` | NOT pi3 | YOLO-fire NCNN inference for fire and smoke |
+| `alert` | `ds-alert` | any node | Event correlation, anti-spam cooldown, Telegram/webhook dispatch |
+| `system_monitor` | `ds-system-monitor` | **global** (all nodes) | 1 Hz CPU, RAM, temperature, disk and network telemetry |
+| `rebalancer` | `docker:27-cli` | manager + NOT pi3 | Polls every 15 s, moves services off overloaded nodes via `docker service update --force` |
+| `zswarm-dashboard` | `mohsenasm/swarm-dashboard` | **global** (managers) | Docker Swarm web dashboard on port 8080 |
+
+### motion
+Reads the RTSP stream via FFmpeg at 10 FPS, applies Gaussian blur and frame differencing to detect motion. Publishes a `motion_flag` message (start/end) on port 5556 and base64-encoded JPEG frames with a unique `image_id` on port 5557. A configurable cooldown (default 1 s) prevents flooding the detection pipeline.
+
+### detection\_coco
+Subscribes to motion images via peer discovery. Runs YOLOv8n NCNN inference (confidence ≥ 0.5) and publishes `detection_results` on port 5558, preserving the source `image_id` for correlation.
+
+### detection\_fire
+Identical architecture to `detection_coco` but uses a fire-specific YOLO model. Publishes on port 5559.
+
+### alert
+Correlates `motion_flag`, `motion_image`, and `detection_results` messages by `image_id` and sender node. Implements:
+- **2 s detection wait** before processing a motion-only event
+- **60 s anti-spam cooldown** per detected class
+- **Immediate dispatch** for `fire` and `weapon` class detections (configurable via `ALERT_IMMEDIATE_CLASSES`)
+- **Telegram** photo messages with optional image attachment
+- **Webhook** POST (optional)
+
+### system\_monitor
+Runs on every Swarm node. Collects CPU %, memory (used/total GB, %), disk I/O (KB/s), network I/O (KB/s) and CPU temperature. Logs to `logs/{hostname}-htop-HH.MM.SS.log`. Publishes structured JSON metrics on port 5560.
+
+### rebalancer
+Runs as a shell script inside a `docker:27-cli` container with the Docker socket mounted. Every 15 s it checks whether any node has zero replicated services while another has more than one, and moves one service at a time (with a 60 s per-service cooldown) to restore balance. Excludes global-mode services and itself.
+
+![](.result/charts/rebalance.png)
+
+## Setup & Deployment
+
+### Prerequisites
+
+- Docker Swarm initialised with at least one manager node
+- All nodes joined to the swarm (`docker swarm join ...`)
+- Docker Hub account (or private registry) for image distribution
+- Python 3.10+ if running services outside Docker
+
+### 1. Configure Telegram alerts
 
 ```bash
 cp .env.example .env
 ```
 
-2. Edit `.env` and set your real values:
+Edit `.env`:
 
 ```env
 ALERT_TELEGRAM_ENABLED=true
-ALERT_TELEGRAM_BOT_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
-ALERT_TELEGRAM_CHAT_ID=YOUR_TELEGRAM_CHAT_ID
+ALERT_TELEGRAM_BOT_TOKEN=YOUR_BOT_TOKEN
+ALERT_TELEGRAM_CHAT_ID=YOUR_CHAT_ID
 ALERT_TELEGRAM_ATTACH_IMAGE=true
 ```
 
-3. Deploy as usual. `deploy_stack.sh` loads `.env` before `docker stack deploy`.
+`deploy_stack.sh` sources `.env` automatically before deploying the stack.
 
-### 1. Install ZeroMQ on all Raspberry Pis
+### 2. Set your Docker Hub username
 
-```bash
-sudo apt-get update
-sudo apt-get install libzmq3-dev
-pip3 install pyzmq
-```
-
-Or use requirements.txt:
-```bash
-pip3 install -r requirements.txt
-```
-
-### 2. Configure Network
-
-Edit `config.py` and set `GATEWAY_IP` to your gateway Raspberry Pi's IP address:
-```python
-GATEWAY_IP = "192.168.1.100"  # Change this!
-```
-
-Find your IP with: `hostname -I`
-
-### 3. Open Firewall Ports (if needed)
-
-On the gateway:
-```bash
-sudo ufw allow 5555/tcp
-sudo ufw allow 5556/tcp
-```
-
-## Running the Test
-
-### On Gateway Raspberry Pi:
-```bash
-python3 gateway.py
-```
-
-### On Edge Device 1:
-```bash
-python3 edge_device.py edge_1
-```
-
-### On Edge Device 2:
-```bash
-python3 edge_device.py edge_2
-```
-
-### On Edge Device 3:
-```bash
-python3 edge_device.py edge_3
-```
-
-## Expected Output
-
-**Gateway will:**
-- Send 3 test messages
-- Receive 3 responses (one from each device)
-- Display all received responses
-
-**Each Edge Device will:**
-- Receive a message from gateway
-- Process it
-- Send a response back
-
-## Testing Locally (Same Machine)
-
-For testing on one machine, use `127.0.0.1` as `GATEWAY_IP`:
+Either edit `deploy_stack.sh` directly:
 
 ```bash
-# Terminal 1 - Gateway
-python3 gateway.py
-
-# Terminal 2 - Edge 1
-python3 edge_device.py edge_1
-
-# Terminal 3 - Edge 2
-python3 edge_device.py edge_2
-
-# Terminal 4 - Edge 3
-python3 edge_device.py edge_3
+DOCKERHUB_USERNAME="your_username"
 ```
 
-## Troubleshooting
+Or export it in your shell:
 
-**Connection refused:**
-- Check `GATEWAY_IP` in config.py
-- Verify gateway is running first
-- Check firewall: `sudo ufw status`
-
-**No response:**
-- Make sure all 3 edge devices are running
-- Check network connectivity: `ping <gateway_ip>`
-
-## How It Works
-
-```
-Gateway (PUSH:5555) ──> Edge Devices (PULL)
-                         │
-                         │ Process
-                         ▼
-Gateway (PULL:5556) <── Edge Devices (PUSH)
+```bash
+export DOCKERHUB_USERNAME="your_username"
 ```
 
-The gateway sends messages using PUSH socket, edge devices receive with PULL socket, process, and respond back using PUSH to gateway's PULL socket.
+### 3. Build, push, and deploy
+
+```bash
+./deploy_stack.sh
+```
+
+This script will:
+1. Remove any existing `ds_2026` stack
+2. Build and push Docker images to Docker Hub
+3. Deploy the stack with `docker stack deploy`
+
+### Hostname-aware logging
+
+Every container mounts `/etc/hostname` as `/host_hostname` (read-only). The shared logger uses this value so log files are automatically grouped per physical device (e.g. `logs/pi4.log`) without any hardcoded environment variables.
+
+## Configuration
+
+All defaults live in `shared/config.py` and can be overridden at runtime via environment variables.
+
+### Ports
+
+| Port | Protocol | Service | Purpose |
+|------|----------|---------|---------|
+| 5555 | TCP (ZMQ) | all | Node-to-node base port (peer discovery) |
+| 5556 | TCP (ZMQ PUB) | motion | Motion flag events |
+| 5557 | TCP (ZMQ PUB) | motion | Motion JPEG image frames |
+| 5558 | TCP (ZMQ PUB) | detection\_coco | COCO detection results |
+| 5559 | TCP (ZMQ PUB) | detection\_fire | Fire/smoke detection results |
+| 5560 | TCP (ZMQ PUB) | system\_monitor | System telemetry |
+| 50000 | UDP | motion / detection | Peer discovery broadcast |
+| 50001 | UDP | system\_monitor | Peer discovery broadcast |
+| 8080 | HTTP | zswarm-dashboard | Swarm web UI |
+
+### Key environment variables
+
+| Variable | Default | Service | Description |
+|----------|---------|---------|-------------|
+| `MOTION_URL` | `rtsp://192.168.144.25:8554/main.264` | motion | RTSP source URL |
+| `MOTION_FPS` | `10` | motion | Capture / process frame rate |
+| `MOTION_THRESHOLD` | `0.5` | motion | Pixel-change ratio to trigger motion |
+| `MOTION_IMAGE_PUBLISH_COOLDOWN` | `1.0` | motion | Min seconds between published frames |
+| `YOLO_COCO_CONFIDENCE` | `0.5` | detection\_coco | Minimum COCO detection confidence |
+| `YOLO_FIRE_CONFIDENCE` | `0.5` | detection\_fire | Minimum fire detection confidence |
+| `ALERT_DETECTION_WAIT_SECONDS` | `2.0` | alert | How long to wait for detection results after a motion image |
+| `ALERT_COOLDOWN_SECONDS` | `60` | alert | Anti-spam cooldown per class |
+| `ALERT_IMMEDIATE_CLASSES` | `["weapon","fire"]` | alert | Classes that bypass the cooldown |
+| `ALERT_TELEGRAM_ENABLED` | `false` | alert | Enable Telegram notifications |
+| `ALERT_TELEGRAM_BOT_TOKEN` | — | alert | Telegram bot token (from `.env`) |
+| `ALERT_TELEGRAM_CHAT_ID` | — | alert | Telegram chat/channel ID (from `.env`) |
+| `ALERT_TELEGRAM_ATTACH_IMAGE` | `true` | alert | Attach the triggering JPEG to the Telegram message |
+| `ALERT_WEBHOOK_ENABLED` | `false` | alert | Enable webhook POST |
+| `ALERT_WEBHOOK_URL` | — | alert | Webhook endpoint |
+| `SYSTEM_MONITOR_INTERVAL` | `1` | system\_monitor | Telemetry collection interval (seconds) |
+| `STACK_NAME` | `ds_2026` | rebalancer | Docker stack name to rebalance |
+| `POLL_SECONDS` | `15` | rebalancer | Rebalance check interval |
+| `COOLDOWN_SECONDS` | `60` | rebalancer | Per-service cooldown after a rebalance move |
+
+## Logging & Monitoring
+
+- **Service logs**: `logs/{hostname}.log` — one file per physical node, shared via the `./logs` bind-mount
+- **System monitor logs**: `logs/{hostname}-htop-HH.MM.SS.log`
+- **Swarm dashboard**: `http://<manager-node-ip>:8080` — live view of all services, replicas, and node health
+
+---
+
+## Experimental Results
+
+Experiments were run on 2026-03-02 across three node configurations to characterise the impact of node availability on latency, detection quality, and resource utilisation.
+
+### Scenarios
+
+| Scenario | Nodes active | pi3 role | pi4 role | pi5 role |
+|----------|-------------|----------|----------|----------|
+| **A** (baseline) | pi3 + pi4 + pi5 | Alert only | COCO + fire detection | Motion capture |
+| **B1** (pi4 failure) | pi3 + pi5 | Alert + COCO + fire detection | — | Motion capture |
+| **B2** (pi5 failure) | pi3 + pi4 | Alert + motion + COCO + fire detection | COCO detection | — |
+
+In Scenarios B1 and B2, the rebalancer redistributes detection services onto remaining nodes. However, pi3 (the alert aggregator) must absorb additional workloads, revealing the cost of co-location.
+
+---
+
+### End-to-End Pipeline Latency
+
+Queue Age measures the full pipeline: camera publish → motion → ZMQ transport → detection → alert dispatch.
+
+| Metric | Scenario A | Scenario B1 | Scenario B2 |
+|--------|-----------|------------|------------|
+| Queue Age — mean | **0.48 s** | 1.78 s | 2.31 s |
+| Queue Age — p50 | **0.32 s** | 1.08 s | 2.01 s |
+| Queue Age — p95 | **1.37 s** | 2.84 s | 3.07 s |
+| Queue Age — max | 2.12 s | 2.99 s | 4.34 s |
+| Alert recv → dispatch (mean) | **0.21 s** | 1.15 s | 1.33 s |
+| Alert recv → dispatch (p95) | 0.87 s | 2.41 s | 2.11 s |
+
+Scenario A is **4.8× faster** than B2 (mean Queue Age) and **6.4× faster** on the alert-coordinator's own recv-to-dispatch path.
+
+**E2E latency over time:**
+
+![](.result/charts/e2e_timeseries.png)
+
+**Latency CDF:**
+
+![](.result/charts/latency_cdf.png)
+
+---
+
+### Pipeline Stage Breakdown
+
+Each image passes through three measurable stages: (1) communication/transmission from source to alert node, (2) YOLO inference, (3) alert dispatch.
+
+| Stage | Scenario A avg | Scenario B1 avg | Scenario B2 avg |
+|-------|---------------|----------------|----------------|
+| Communication | 0.39 s | 2.48 s | 3.18 s |
+| Inference | 0.35 s | 0.17 s | 0.99 s |
+| Dispatch | 0.07 s | 0.00 s | 0.05 s |
+| **E2E total** | **0.21 s** | **1.15 s** | **1.33 s** |
+
+![](.result/charts/stage_delay.png)
+
+---
+
+### Event Assembly & Alert Pipeline
+
+| Metric | Scenario A | Scenario B1 | Scenario B2 |
+|--------|-----------|------------|------------|
+| Images received | 55 | 49 | 60 |
+| Full assemblies (image + detections) | **55 / 55 (100%)** | 32 / 49 (65%) | 18 / 60 (30%) |
+| Partial assemblies (timeout) | 0 | 17 | 42 |
+| Images with ≥1 detection | **30 (54.5%)** | 12 (24.5%) | 5 (8.3%) |
+| Orphan / lost events | 67 | 76 | **108** |
+| Alerts dispatched | 7 | 6 | 3 |
+| Telegram confirmations | 7 / 7 | 6 / 6 | 3 / 3 |
+
+Telegram delivery was **100% reliable** in all scenarios. The detection rate collapse in B1/B2 is caused by inference backpressure: when pi3 is saturated, images expire from the correlation queue before detection completes.
+
+**Assembly breakdown (full vs partial):**
+
+![](.result/charts/assembly_breakdown.png)
+
+**Alert pipeline stage counts:**
+
+![](.result/charts/alert_pipeline.png)
+
+---
+
+### Inference Latency per Model
+
+| Scenario | Node | Model | Infer mean (ms) | Infer p95 (ms) | Infer max (ms) |
+|----------|------|-------|----------------|---------------|---------------|
+| A | pi4 | COCO | 418 | 455 | 820 |
+| A | pi5 | Fire | 228 | 360 | 452 |
+| B1 | pi5 | COCO | 155 | 426 | 656 |
+| B1 | pi5 | Fire | 150 | 412 | 711 |
+| B2 | pi4 | COCO | **955** | 1344 | 2291 |
+| B2 | pi4 | Fire | **945** | 1296 | 2213 |
+
+Co-locating both models on pi4 (B2) degrades COCO inference by **+128%** and fire inference by **+314%** relative to the dedicated-node baseline (A).
+
+![](.result/charts/inference_boxplot.png)
+
+---
+
+### Resource Utilisation
+
+| Node / Scenario | Avg CPU | Peak CPU | Avg RAM | Avg Temp | Peak Temp |
+|----------------|---------|----------|---------|----------|-----------|
+| pi3 — A (alert only) | **3.8%** | 53.3% | 35.9% | 40.8°C | 47.8°C |
+| pi4 — A (detection) | 12.2% | 83.6% | 18.0% | 60.8°C | 68.2°C |
+| pi5 — A (motion) | 19.1% | 77.5% | 15.0% | 55.6°C | 63.9°C |
+| pi3 — B1 (alert + detect) | **72.6%** | 95.1% | 68.9% | 60.6°C | 65.0°C |
+| pi5 — B1 (idle/motion) | 6.6% | 77.1% | 32.6% | 50.1°C | 57.9°C |
+| pi3 — B2 (alert + motion + detect) | **64.5%** | 94.6% | 53.2% | 59.5°C | 65.5°C |
+| pi4 — B2 (detection) | 16.3% | 91.8% | 22.9% | 59.2°C | **70.1°C** |
+
+In Scenario A, pi3 averages **under 4% CPU** — alert aggregation alone is lightweight. In B1, pi3 saturates at 72.6% average / 95.1% peak, with RAM reaching 68.9% (≈210 MB headroom before OOM risk). In B2, pi4 reaches 70.1°C peak — at the Raspberry Pi OS thermal throttle boundary.
+
+![](.result/charts/resource_avg_peak.png)
+
+**CPU utilisation and temperature over time:**
+
+![](.result/charts/resource_timeseries.png)
+
+---
+
+### Key Findings
+
+| # | Finding |
+|---|---------|
+| 1 | Scenario A E2E (Queue Age) is **4.8× lower** than B2; alert recv→dispatch is **6.4× lower** |
+| 2 | pi3 CPU saturates at 72–95% when co-located with detection models |
+| 3 | Detection rate collapses from **54.5% → 8.3%** as nodes are removed |
+| 4 | Orphan/lost events increase **61%** (67 → 108) correlating with pi3 overload |
+| 5 | pi3 memory in B1 peaks at 77.9% — OOM risk under sustained load |
+| 6 | pi4 reaches 70.1°C in B2 at thermal throttle threshold |
+| 7 | Network bandwidth is negligible — the system is entirely compute-bound |
+| 8 | Telegram alert delivery is **100% reliable** across all scenarios |
