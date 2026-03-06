@@ -218,8 +218,8 @@ def chart_stage_delay(alert_data: dict) -> None:
     BAR_W = 0.45
 
     fig, axes = plt.subplots(2, 1, figsize=(8, 10), sharex=False)
-    fig.suptitle("Pipeline Stage Delay per Scenario — Average vs Peak (Stacked)",
-                 fontsize=13, fontweight="bold")
+    # fig.suptitle("Pipeline Stage Delay per Scenario — Average vs Peak (Stacked)",
+                #  fontsize=13, fontweight="bold")
 
     legend_handles = [mpatches.Patch(color=c, label=lbl) for _, lbl, c in STAGES]
     fig.legend(handles=legend_handles, title="Stage", loc="upper right",
@@ -263,7 +263,7 @@ def chart_stage_delay(alert_data: dict) -> None:
         ax.spines[["top", "right"]].set_visible(False)
 
     plt.tight_layout()
-    save_chart(fig, "02_stage_delay", {
+    save_chart(fig, "stage_delay", {
         "chart": "stage_delay_stacked",
         "description": "2x1 stacked bar: rows=Avg/Peak, bars=scenario, segments=stages",
         "stages": [s for s, *_ in STAGES],
@@ -504,8 +504,8 @@ SCEN_COLOURS = {"A": "#4C72B0", "B1": "#DD8452", "B2": "#55A868"}
 def chart_e2e_timeseries(alert_events: dict) -> None:
     """Line chart: queue_age_s over elapsed time, one line per scenario."""
     fig, ax = plt.subplots(figsize=(12, 5))
-    fig.suptitle("End-to-End Latency (Publish → Alert) Over Elapsed Time",
-                 fontsize=13, fontweight="bold")
+    # fig.suptitle("End-to-End Latency (Publish → Alert) Over Elapsed Time",
+    #              fontsize=13, fontweight="bold")
 
     all_records = []
     for label, rows in alert_events.items():
@@ -536,7 +536,7 @@ def chart_e2e_timeseries(alert_events: dict) -> None:
     ax.set_axisbelow(True)
     ax.spines[["top", "right"]].set_visible(False)
     plt.tight_layout()
-    save_chart(fig, "04_e2e_timeseries", {
+    save_chart(fig, "e2e_timeseries", {
         "chart": "e2e_timeseries",
         "description": "queue_age_s over elapsed seconds, one line per scenario",
         "data": all_records,
@@ -658,8 +658,8 @@ def chart_alert_pipeline(pipeline_data: dict) -> None:
 def chart_latency_cdf(alert_events: dict) -> None:
     """Empirical CDF of queue_age_s per scenario."""
     fig, ax = plt.subplots(figsize=(9, 5))
-    fig.suptitle("Empirical CDF of End-to-End Latency (Publish → Alert Recv)",
-                 fontsize=13, fontweight="bold")
+    # fig.suptitle("Empirical CDF of End-to-End Latency (Publish → Alert Recv)",
+    #              fontsize=13, fontweight="bold")
 
     all_records = []
     for label, rows in alert_events.items():
@@ -689,7 +689,7 @@ def chart_latency_cdf(alert_events: dict) -> None:
     ax.set_axisbelow(True)
     ax.spines[["top", "right"]].set_visible(False)
     plt.tight_layout()
-    save_chart(fig, "07_latency_cdf", {
+    save_chart(fig, "latency_cdf", {
         "chart": "latency_cdf",
         "description": "Empirical CDF of queue_age_s per scenario",
         "data": all_records,
@@ -760,8 +760,8 @@ def chart_assembly_breakdown(assembly: dict) -> None:
     partial_vals = [assembly[s]["partial"] for s in scen_labels]
 
     fig, ax = plt.subplots(figsize=(7, 5))
-    fig.suptitle("Alert Assembly Outcome — Full vs Partial (Timeout) per Scenario",
-                 fontsize=13, fontweight="bold")
+    # fig.suptitle("Alert Assembly Outcome — Full vs Partial (Timeout) per Scenario",
+    #              fontsize=13, fontweight="bold")
 
     b1 = ax.bar(x_pos, full_vals, BAR_W, color="#55A868",
                 edgecolor="white", linewidth=0.8, label="Full Assembly", zorder=3)
@@ -792,7 +792,7 @@ def chart_assembly_breakdown(assembly: dict) -> None:
 
     all_records = [{"scenario": s, "full": assembly[s]["full"],
                     "partial": assembly[s]["partial"]} for s in scen_labels]
-    save_chart(fig, "09_assembly_breakdown", {
+    save_chart(fig, "assembly_breakdown", {
         "chart": "assembly_breakdown",
         "description": "Stacked bar: full vs partial assemblies per scenario",
         "data": all_records,
@@ -811,32 +811,32 @@ def main():
     pipeline    = load_alert_pipeline_summary()
     assembly    = load_assembly_breakdown()
 
-    print("\n[Chart 01] Resource avg/peak 2×3")
-    chart_resource_avg_peak(sysmon)
+    # print("\n[Chart 01] Resource avg/peak 2×3")
+    # chart_resource_avg_peak(sysmon)
 
-    print("\n[Chart 02] Stage delay stacked bar")
-    chart_stage_delay(alert)
+    # print("\nStage delay stacked bar")
+    # chart_stage_delay(alert)
 
-    print("\n[Chart 03] Stage latency Gantt")
-    chart_stage_gantt(load_gantt())
+    # print("\n[Chart 03] Stage latency Gantt")
+    # chart_stage_gantt(load_gantt())
 
-    print("\n[Chart 04] E2E latency time-series")
-    chart_e2e_timeseries(alert_evts)
+    # print("\n E2E latency time-series")
+    # chart_e2e_timeseries(alert_evts)
 
-    print("\n[Chart 05] CPU & temperature time-series")
-    chart_resource_timeseries(sys_samples)
+    # print("\n[Chart 05] CPU & temperature time-series")
+    # chart_resource_timeseries(sys_samples)
 
-    print("\n[Chart 06] Alert pipeline stage counts")
-    chart_alert_pipeline(pipeline)
+    # print("\n[Chart 06] Alert pipeline stage counts")
+    # chart_alert_pipeline(pipeline)
 
     print("\n[Chart 07] Latency CDF")
     chart_latency_cdf(alert_evts)
 
-    print("\n[Chart 08] Inference latency box plot")
-    chart_inference_boxplot(det_dist)
+    # print("\n[Chart 08] Inference latency box plot")
+    # chart_inference_boxplot(det_dist)
 
-    print("\n[Chart 09] Assembly breakdown")
-    chart_assembly_breakdown(assembly)
+    # print("\n Assembly breakdown")
+    # chart_assembly_breakdown(assembly)
 
     print("\nDone. All outputs in: charts/")
 

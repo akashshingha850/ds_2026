@@ -146,6 +146,7 @@ class MotionDetector(ZMQNode):
                     continue
 
                 try:
+                    
                     frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                     
                     blurred_frame = self.gaussian_blur(frame_gray, KERNEL_SIZE, BLUR_SIGMA)
