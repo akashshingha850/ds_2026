@@ -1,30 +1,34 @@
-import ffmpeg
-import base64
-import sys
-import os
-import numpy as np
-import cv2
-import time
-import zmq
+import json
 import logging
+import sys
+import time
 from datetime import datetime
 
-# Add parent directory to path to import config
+import cv2
+import ffmpeg
+import numpy as np
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from sensor_msgs.msg import CompressedImage
+from std_msgs.msg import String
+
+# Allow importing the shared config / helpers copied into /app
 sys.path.append('.')
 
 from config import (
-    MOTION_FLAG_PORT,
-    MOTION_IMAGE_PORT,
     MOTION_URL,
     MOTION_THRESHOLD,
     MOTION_FPS,
     PIXEL_DIFF_THRESHOLD,
     BLUR_SIGMA,
     KERNEL_SIZE,
-    DISCOVERY_PORT_MOTION,
     MOTION_IMAGE_PUBLISH_COOLDOWN,
+    TOPIC_MOTION_FLAG,
+    TOPIC_MOTION_IMAGE,
 )
-from utils import ZMQNode
+from ros_common import resolve_device_hostname, ros_namespace, setup_logging
+
 
 def get_video_dimensions(url):
     """Probe the video stream and return width and height."""
@@ -32,7 +36,7 @@ def get_video_dimensions(url):
     attempt = 1
     while True:
         try:
-            probe = ffmpeg.probe(MOTION_URL)
+            probe = ffmpeg.probe(url)
             video_info = next(s for s in probe['streams'] if s['codec_type'] == 'video')
             width = int(video_info['width'])
             height = int(video_info['height'])
@@ -41,21 +45,26 @@ def get_video_dimensions(url):
             return width, height
         except (ffmpeg.Error, StopIteration) as e:
             print(f"Video dimension probe failed (attempt {attempt}): {e}")
-            print("Retrying in {} seconds...".format(retry_delay))
+            print(f"Retrying in {retry_delay} seconds...")
             time.sleep(retry_delay)
             attempt += 1
 
-class MotionDetector(ZMQNode):
+
+class MotionDetector(Node):
     def __init__(self):
-        super().__init__('motion', discovery_port=DISCOVERY_PORT_MOTION)
-        self.pub_port = MOTION_IMAGE_PORT  # For discovery
-        self.flag_pub = self.context.socket(zmq.PUB)
-        self.flag_pub.setsockopt(zmq.SNDHWM, int(os.environ.get("FLAG_PUB_SND_HWM", "2000")))
-        self.flag_pub.bind(f"tcp://*:{MOTION_FLAG_PORT}")
-        self.image_pub = self.context.socket(zmq.PUB)
-        self.image_pub.setsockopt(zmq.SNDHWM, int(os.environ.get("IMAGE_PUB_SND_HWM", "5000")))
-        self.image_pub.setsockopt(zmq.SNDBUF, int(os.environ.get("IMAGE_PUB_SND_BUF", str(8 * 1024 * 1024))))
-        self.image_pub.bind(f"tcp://*:{MOTION_IMAGE_PORT}")
+        super().__init__('motion', namespace=ros_namespace())
+        self.node_id = f"{resolve_device_hostname()}-motion"
+
+        # Reliable, keep-last QoS so detection / alert subscribers don't miss
+        # the comparatively low-rate motion events.
+        qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=50,
+        )
+        self.flag_pub = self.create_publisher(String, TOPIC_MOTION_FLAG, qos)
+        self.image_pub = self.create_publisher(CompressedImage, TOPIC_MOTION_IMAGE, qos)
+
         self.prev_blurred_frame = None
         self.last_motion_state = 0
         self.image_id = 1  # Incremental image ID
@@ -66,53 +75,58 @@ class MotionDetector(ZMQNode):
     def detect_motion(self, prev_frame, current_frame, pixel_diff_threshold):
         if prev_frame is None:
             return None
-        
+
         diff = np.abs(current_frame - prev_frame)
         changed_pixels = (diff > pixel_diff_threshold).astype(np.float32)
         change_ratio = np.mean(changed_pixels)
-        
+
         return change_ratio
 
     def publish_motion_flag(self, flag, timestamp):
-        self.flag_pub.send_json({
+        msg = String()
+        msg.data = json.dumps({
             "type": "motion_flag",
             "node_id": self.node_id,
             "flag": flag,
             "ts": timestamp,
         })
+        self.flag_pub.publish(msg)
 
     def publish_motion_image(self, frame, timestamp):
         t_start = time.time()
         success, encoded_img = cv2.imencode('.jpg', frame)
         if success:
             image_bytes = encoded_img.tobytes()
-            image_b64 = base64.b64encode(image_bytes).decode("ascii")
             image_size_kb = len(image_bytes) / 1024
-            message = {
-                "type": "image",
+
+            msg = CompressedImage()
+            msg.format = "jpeg"
+            msg.data = image_bytes
+            # Carry the per-image metadata (node_id / image_id / ts) in the
+            # header frame_id as JSON, matching the fields the alert service
+            # uses to correlate motion images with detection results.
+            msg.header.frame_id = json.dumps({
                 "node_id": self.node_id,
-                "size": f"{image_size_kb:.2f} KB",
-                "image_data": image_b64,
-                "ts": timestamp,
                 "image_id": self.image_id,
-            }
-            self.image_pub.send_json(message)
+                "ts": timestamp,
+            })
+            self.image_pub.publish(msg)
+
             t_end = time.time()
             publish_latency_ms = (t_end - t_start) * 1000
-            logging.info(f"{self.node_id} published image #{self.image_id} ({image_size_kb:.2f} KB) at {timestamp} | publish latency: {publish_latency_ms:.3f} ms (start={t_start:.6f}, end={t_end:.6f})")
+            logging.info(
+                f"{self.node_id} published image #{self.image_id} ({image_size_kb:.2f} KB) at {timestamp} "
+                f"| publish latency: {publish_latency_ms:.3f} ms (start={t_start:.6f}, end={t_end:.6f})"
+            )
             self.image_id += 1
         else:
             logging.error("Failed to encode image")
 
     def run(self):
-        # Start discovery thread
-        self.start_discovery()
+        logging.info(f"[FLAG_PUB:{self.node_id}] Publishing on topic '{TOPIC_MOTION_FLAG}'")
+        logging.info(f"[IMAGE_PUB:{self.node_id}] Publishing on topic '{TOPIC_MOTION_IMAGE}'")
 
-        logging.info(f"[FLAG_PUB:{self.node_id}] Listening on tcp://*:{MOTION_FLAG_PORT}")
-        logging.info(f"[IMAGE_PUB:{self.node_id}] Listening on tcp://*:{MOTION_IMAGE_PORT}")
-        logging.info(f"[PUB:{self.node_id}] Local IP: {self.get_local_ip()}")
-
-        while True:
+        while rclpy.ok():
             width, height = get_video_dimensions(MOTION_URL)
             if width > 0 and height > 0:
                 break
@@ -130,18 +144,17 @@ class MotionDetector(ZMQNode):
 
         logging.info(f"{self.node_id} Starting motion detection... Press Ctrl+C to stop.")
 
-
         try:
             last_publish_time = 0
-            publish_cooldown = MOTION_IMAGE_PUBLISH_COOLDOWN # configured cooldown
-            while True:
+            publish_cooldown = MOTION_IMAGE_PUBLISH_COOLDOWN  # configured cooldown
+            while rclpy.ok():
                 in_bytes = process.stdout.read(bytes_per_frame)
-                
+
                 if len(in_bytes) != bytes_per_frame:
                     logging.warning("Incomplete frame received. Waiting 2 seconds and retrying...")
                     time.sleep(2)
                     continue
-                
+
                 frame = np.frombuffer(in_bytes, np.uint8).reshape((height, width, 3))
 
                 if frame.size == 0:
@@ -152,11 +165,11 @@ class MotionDetector(ZMQNode):
                     t_start = time.time()
 
                     frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    
+
                     blurred_frame = self.gaussian_blur(frame_gray, KERNEL_SIZE, BLUR_SIGMA)
-                    
+
                     change_ratio = self.detect_motion(self.prev_blurred_frame, blurred_frame, PIXEL_DIFF_THRESHOLD)
-                    
+
                     motion_detected = change_ratio is not None and change_ratio > MOTION_THRESHOLD
 
                     t_end = time.time()
@@ -195,10 +208,19 @@ class MotionDetector(ZMQNode):
             logging.info("User stopped motion detection with Ctrl+C.")
         finally:
             process.terminate()
-            self.flag_pub.close()
-            self.image_pub.close()
-            self.cleanup()
+
+
+def main():
+    setup_logging()
+    rclpy.init()
+    detector = MotionDetector()
+    try:
+        detector.run()
+    finally:
+        detector.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
 
 if __name__ == "__main__":
-    detector = MotionDetector()
-    detector.run()
+    main()

@@ -3,5 +3,4 @@ torch==2.8.0
 torchvision==0.23.0
 ultralytics
 numpy
-pyzmq
 ncnn

@@ -21,7 +21,7 @@ dist/
 .github/
 .vscode/
 
-logs/
+# logs/
 report/
 resource/
 draft/

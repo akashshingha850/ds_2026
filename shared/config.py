@@ -32,6 +32,22 @@ DISCOVERY_PORT = 50000  # Default discovery port (fallback)
 
 
 # -----------------------------------------------------------------------------
+# ROS 2 TRANSPORT (motion / detection / alert pipeline)
+# -----------------------------------------------------------------------------
+# These services communicate over ROS 2 Humble topics (DDS) instead of ZeroMQ.
+# RMW defaults to CycloneDDS (lighter footprint for edge devices / Raspberry Pi).
+# Cross-host discovery relies on DDS multicast, so the containers run on the
+# host network and share the same ROS_DOMAIN_ID on one LAN subnet.
+ROS_DOMAIN_ID = int(os.getenv("ROS_DOMAIN_ID", "0"))
+
+# Topic names (override via env if needed)
+TOPIC_MOTION_FLAG = os.getenv("TOPIC_MOTION_FLAG", "motion/flag")
+TOPIC_MOTION_IMAGE = os.getenv("TOPIC_MOTION_IMAGE", "motion/image")
+TOPIC_DETECTION_COCO = os.getenv("TOPIC_DETECTION_COCO", "detection/coco")
+TOPIC_DETECTION_FIRE = os.getenv("TOPIC_DETECTION_FIRE", "detection/fire")
+
+
+# -----------------------------------------------------------------------------
 # MOTION DETECTION
 # -----------------------------------------------------------------------------
 MOTION_FLAG_PORT = 5556

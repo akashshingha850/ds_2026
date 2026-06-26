@@ -9,8 +9,13 @@ from datetime import datetime, timedelta
 import cv2
 import numpy as np
 import requests
-import zmq
 import sys
+
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from sensor_msgs.msg import CompressedImage
+from std_msgs.msg import String
 
 # Setup imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -18,7 +23,7 @@ project_root = os.path.abspath(os.path.join(current_dir, ".."))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from utils import resolve_device_hostname, ZMQNode
+from ros_common import resolve_device_hostname, ros_namespace, setup_logging
 from config import (
     ALERTS_ENABLED,
     ALERT_COOLDOWN_SECONDS,
@@ -29,11 +34,10 @@ from config import (
     ALERT_TELEGRAM_CHAT_ID,
     ALERT_WEBHOOK_ENABLED,
     ALERT_WEBHOOK_URL,
-    NODE_PORT,
-    MOTION_FLAG_PORT,
-    MOTION_IMAGE_PORT,
-    DETECTION_COCO_PORT,
-    DETECTION_FIRE_PORT,
+    TOPIC_MOTION_FLAG,
+    TOPIC_MOTION_IMAGE,
+    TOPIC_DETECTION_COCO,
+    TOPIC_DETECTION_FIRE,
 )
 
 class AlertManager:
@@ -207,11 +211,34 @@ class AlertManager:
             logging.error(f"Webhook alert failed: {exc}")
 
 
-class AlertNode(ZMQNode):
+class AlertNode(Node):
     def __init__(self):
-        super().__init__("api-sub")
+        super().__init__("alert", namespace=ros_namespace())
         self.alert_manager = AlertManager()
-        self.connected_endpoints = set()
+        self.receiver_host = self.alert_manager.node_id
+        self.node_receiver = f"{self.receiver_host}-alert"
+
+        # Correlation state (callbacks run serially on the single-threaded
+        # executor, so these plain dicts need no extra locking).
+        self.current_events = {}   # sender -> motion_flag message dict
+        self.pending_events = {}   # (sender, image_id) -> {payload, deadline}
+        self.detection_wait_seconds = 2.0
+
+        qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=50,
+        )
+        self.create_subscription(String, TOPIC_MOTION_FLAG, self.on_motion_flag, qos)
+        self.create_subscription(CompressedImage, TOPIC_MOTION_IMAGE, self.on_motion_image, qos)
+        self.create_subscription(String, TOPIC_DETECTION_COCO, self.on_detection, qos)
+        self.create_subscription(String, TOPIC_DETECTION_FIRE, self.on_detection, qos)
+
+        # Periodically flush image events that never received a detection.
+        self.create_timer(0.5, self.flush_pending)
+
+        logging.info(f"[SUB:{self.node_receiver}] Subscribed to motion + detection topics")
+        logging.info(f"[SUB:{self.node_receiver}] Alert forwarding is Telegram/Webhook only")
 
     def process_aggregated_event(self, payload):
         try:
@@ -263,160 +290,109 @@ class AlertNode(ZMQNode):
         except Exception as e:
             logging.error(f"Alert processing error: {e}")
 
-    def connect_endpoint(self, sub_socket, ip, port, label):
-        endpoint = f"tcp://{ip}:{port}"
-        if endpoint in self.connected_endpoints:
-            return
-        sub_socket.connect(endpoint)
-        self.connected_endpoints.add(endpoint)
-        receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
-        node_receiver = f"{receiver_host}-alert"
-        logging.info(f"[{node_receiver}] Connected to {label} at {endpoint}")
-        time.sleep(0.2)
+    def flush_pending(self):
+        """Flush image events that never received a correlated detection in time."""
+        now_monotonic = time.monotonic()
+        for event_key, pending_event in list(self.pending_events.items()):
+            if pending_event["deadline_monotonic"] <= now_monotonic:
+                self.process_aggregated_event(pending_event["payload"])
+                del self.pending_events[event_key]
 
-    def subscriber_loop(self):
-        sub_socket = self.context.socket(zmq.SUB)
-        sub_socket.setsockopt_string(zmq.SUBSCRIBE, "")
-
-        motion_host_fallback = os.environ.get("MOTION_HOST", "motion")
-        detection_coco_host_fallback = os.environ.get("DETECTION_COCO_HOST", "detection_coco")
-        detection_fire_host_fallback = os.environ.get("DETECTION_FIRE_HOST", "detection_fire")
-
-        detection_wait_seconds = 2.0
-        message_count = 0
-        current_events = {}
-        pending_events = {}
-
-        # Hybrid fallback: connect to service DNS endpoints as backup.
-        self.connect_endpoint(sub_socket, motion_host_fallback, MOTION_FLAG_PORT, "fallback-motion-flag")
-        self.connect_endpoint(sub_socket, motion_host_fallback, MOTION_IMAGE_PORT, "fallback-motion-image")
-        self.connect_endpoint(sub_socket, detection_coco_host_fallback, DETECTION_COCO_PORT, "fallback-detection-coco")
-        self.connect_endpoint(sub_socket, detection_fire_host_fallback, DETECTION_FIRE_PORT, "fallback-detection-fire")
-
-        while not self.stop_event.is_set():
-            try:
-                now_monotonic = time.monotonic()
-
-                # Flush stale pending events that did not receive detection in time.
-                for event_key, pending_event in list(pending_events.items()):
-                    if pending_event["deadline_monotonic"] <= now_monotonic:
-                        self.process_aggregated_event(pending_event["payload"])
-                        del pending_events[event_key]
-
-                # Dynamically connect to discovered peers' specific ports
-                for peer_id, info in list(self.peers_info.items()):
-                    peer_ip = info.get("ip")
-                    if not peer_ip:
-                        continue
-
-                    if peer_id.endswith("-motion"):
-                        self.connect_endpoint(sub_socket, peer_ip, MOTION_FLAG_PORT, f"{peer_id}-flag")
-                        self.connect_endpoint(sub_socket, peer_ip, MOTION_IMAGE_PORT, f"{peer_id}-image")
-                    elif peer_id.endswith("-detection_coco"):
-                        self.connect_endpoint(sub_socket, peer_ip, DETECTION_COCO_PORT, peer_id)
-                    elif peer_id.endswith("-detection_fire"):
-                        self.connect_endpoint(sub_socket, peer_ip, DETECTION_FIRE_PORT, peer_id)
-                    else:
-                        self.connect_endpoint(sub_socket, peer_ip, info.get("port", NODE_PORT), peer_id)
-
-                if sub_socket.poll(1000):
-                    recv_ts = datetime.now().isoformat()
-                    message = sub_socket.recv_json()
-                    message_count += 1
-                    sender = message.get("node_id", "unknown")
-                    # message_image_id = message.get("image_id", "N/A")
-                    # receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
-                    # node_receiver = f"{receiver_host}-alert"
-                    # logging.info(f"[{node_receiver}] Received message #{message_count} from {sender}: {message.get('type')} - Image #{message_image_id}")
-
-                    # Add receive timestamp
-                    message["recv_ts"] = recv_ts
-
-                    if message.get('type') == 'motion_flag':
-                        if message.get('flag') == 1:
-                            current_events[sender] = message
-                        # Ignore flag == 0
-                    elif message.get('type') == 'detection_results':
-                        source_sender = message.get("sender") or sender
-                        detection_image_id = message.get("image_id")
-                        if detection_image_id is None:
-                            receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
-                            node_receiver = f"{receiver_host}-alert"
-                            logging.warning(f"[{node_receiver}] detection_results from {source_sender} has no image_id; skipping correlation")
-                            continue
-
-                        event_key = (source_sender, str(detection_image_id))
-                        pending_event = pending_events.pop(event_key, None)
-                        if pending_event:
-                            receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
-                            node_receiver = f"{receiver_host}-alert"
-                            logging.info(f"[{node_receiver}] Correlated detection_results for sender={source_sender}, image_id={detection_image_id}")
-                            pending_event["payload"]["event"]["detection_results"] = message
-                            pending_event["payload"]["event"]["metadata"]["detection_ts"] = message.get("ts")
-                            self.process_aggregated_event(pending_event["payload"])
-                        else:
-                            receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
-                            node_receiver = f"{receiver_host}-alert"
-                            logging.warning(f"[{node_receiver}] No pending event found for sender={source_sender}, image_id={detection_image_id}")
-                    elif message.get('type') == 'image' and sender in current_events:
-                        image_id = message.get("image_id")
-                        if image_id is None:
-                            receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
-                            node_receiver = f"{receiver_host}-alert"
-                            logging.warning(f"[{node_receiver}] image message from {sender} has no image_id; skipping")
-                            continue
-
-                        combined = {
-                            'event': {
-                                'motion_flag': current_events[sender],
-                                'image': message,
-                                'detection_results': None,
-                                'metadata': {
-                                    'node_id': sender,
-                                    'event_ts': current_events[sender].get('ts'),
-                                    'image_ts': message.get('ts'),
-                                    'image_id': image_id,
-                                    'detection_ts': None,
-                                }
-                            }
-                        }
-
-                        event_key = (sender, str(image_id))
-                        pending_events[event_key] = {
-                            "payload": combined,
-                            "deadline_monotonic": time.monotonic() + detection_wait_seconds,
-                        }
-                        receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
-                        node_receiver = f"{receiver_host}-alert"
-                        logging.info(f"[{node_receiver}] Queued image event for sender={sender}, image_id={image_id}")
-                        del current_events[sender]
-
-            except zmq.error.ContextTerminated:
-                break
-            except Exception as e:
-                if not self.stop_event.is_set():
-                    receiver_host = self.alert_manager.node_id if hasattr(self, 'alert_manager') and hasattr(self.alert_manager, 'node_id') else "unknown"
-                    node_receiver = f"{receiver_host}-alert"
-                    logging.error(f"[{node_receiver}] Error: {e}")
-
-        sub_socket.close()
-
-    def run(self):
-        # Start Discovery Loop (from inherited ZMQNode)
-        self.start_discovery()
-        
-        logging.info(f"[SUB:{self.node_id}] Subscribing to messages on port {NODE_PORT}")
-        logging.info(f"[SUB:{self.node_id}] Local IP: {self.local_ip}")
-        logging.info(f"[SUB:{self.node_id}] Alert forwarding is Telegram/Webhook only")
-
-        # Run subscriber logic on main thread
+    def on_motion_flag(self, msg):
         try:
-            self.subscriber_loop()
-        except KeyboardInterrupt:
-            logging.info("[INFO] Shutting down...")
-        finally:
-            self.cleanup()
+            message = json.loads(msg.data)
+        except ValueError:
+            return
+        message["recv_ts"] = datetime.now().isoformat()
+        sender = message.get("node_id", "unknown")
+        if message.get("flag") == 1:
+            self.current_events[sender] = message
+        # Ignore flag == 0
+
+    def on_motion_image(self, msg):
+        recv_ts = datetime.now().isoformat()
+        try:
+            meta = json.loads(msg.header.frame_id) if msg.header.frame_id else {}
+        except (ValueError, TypeError):
+            meta = {}
+        sender = meta.get("node_id", "unknown")
+        if sender not in self.current_events:
+            return
+        image_id = meta.get("image_id")
+        if image_id is None:
+            logging.warning(f"[{self.node_receiver}] image message from {sender} has no image_id; skipping")
+            return
+
+        # Re-encode the raw JPEG bytes to base64 so AlertManager._decode_image
+        # (which expects an "image_data" base64 string) works unchanged.
+        image_message = {
+            "type": "image",
+            "node_id": sender,
+            "image_id": image_id,
+            "ts": meta.get("ts"),
+            "recv_ts": recv_ts,
+            "image_data": base64.b64encode(bytes(msg.data)).decode("ascii"),
+        }
+
+        combined = {
+            'event': {
+                'motion_flag': self.current_events[sender],
+                'image': image_message,
+                'detection_results': None,
+                'metadata': {
+                    'node_id': sender,
+                    'event_ts': self.current_events[sender].get('ts'),
+                    'image_ts': meta.get('ts'),
+                    'image_id': image_id,
+                    'detection_ts': None,
+                }
+            }
+        }
+
+        event_key = (sender, str(image_id))
+        self.pending_events[event_key] = {
+            "payload": combined,
+            "deadline_monotonic": time.monotonic() + self.detection_wait_seconds,
+        }
+        logging.info(f"[{self.node_receiver}] Queued image event for sender={sender}, image_id={image_id}")
+        del self.current_events[sender]
+
+    def on_detection(self, msg):
+        try:
+            message = json.loads(msg.data)
+        except ValueError:
+            return
+        message["recv_ts"] = datetime.now().isoformat()
+        source_sender = message.get("sender") or message.get("node_id")
+        detection_image_id = message.get("image_id")
+        if detection_image_id is None:
+            logging.warning(f"[{self.node_receiver}] detection_results from {source_sender} has no image_id; skipping correlation")
+            return
+
+        event_key = (source_sender, str(detection_image_id))
+        pending_event = self.pending_events.pop(event_key, None)
+        if pending_event:
+            logging.info(f"[{self.node_receiver}] Correlated detection_results for sender={source_sender}, image_id={detection_image_id}")
+            pending_event["payload"]["event"]["detection_results"] = message
+            pending_event["payload"]["event"]["metadata"]["detection_ts"] = message.get("ts")
+            self.process_aggregated_event(pending_event["payload"])
+        else:
+            logging.warning(f"[{self.node_receiver}] No pending event found for sender={source_sender}, image_id={detection_image_id}")
+
+
+def main():
+    setup_logging()
+    rclpy.init()
+    node = AlertNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        logging.info("[INFO] Shutting down...")
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
 
 if __name__ == "__main__":
-    node = AlertNode()
-    node.run()
+    main()

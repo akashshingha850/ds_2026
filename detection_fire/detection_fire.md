@@ -1,6 +1,8 @@
 # Fire Detection Processor
 
-The fire detection processor runs YOLO inference on motion-triggered images and publishes fire-related detection results over ZeroMQ.
+> **Note:** Migrated from ZeroMQ to **ROS 2 Humble**. It now runs as an `rclpy` node that subscribes to `motion/image` (`sensor_msgs/CompressedImage`) and publishes `detection_results` (`std_msgs/String` JSON) on topic `detection/fire`. The `ZMQNode` / port / peer-discovery details below are historical; transport is now DDS (CycloneDDS). See the repo `README.md` for the current topic map.
+
+The fire detection processor runs YOLO inference on motion-triggered images and publishes fire-related detection results over ROS 2 topics.
 
 ## Overview
 

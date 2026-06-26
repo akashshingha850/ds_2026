@@ -1,8 +1,10 @@
 # Motion Detection System
 
+> **Note:** This service was migrated from ZeroMQ to **ROS 2 Humble**. It now runs as an `rclpy` node that publishes `motion_flag` (`std_msgs/String` JSON) on topic `motion/flag` and JPEG frames (`sensor_msgs/CompressedImage`, metadata in `header.frame_id`) on topic `motion/image`. The ZeroMQ ports / UDP peer-discovery details below are historical; transport is now DDS (CycloneDDS). See the repo `README.md` for the current topic map.
+
 ## Overview
 
-The motion detection system is a core component of the distributed surveillance network. It processes video streams from RTSP sources, detects motion using frame differencing, and publishes motion events and images via ZeroMQ for other nodes to consume.
+The motion detection system is a core component of the distributed surveillance network. It processes video streams from RTSP sources, detects motion using frame differencing, and publishes motion events and images over ROS 2 topics for other nodes to consume.
 
 ## Architecture
 

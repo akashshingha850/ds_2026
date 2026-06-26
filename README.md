@@ -1,6 +1,6 @@
 # Distributed Surveillance System
 
-An AI-powered distributed video surveillance system running on a 3-node Raspberry Pi Docker Swarm cluster. It streams live video from a SIYI A8 Mini IP camera, detects motion and objects (including fire and smoke) using NCNN-optimised YOLO models, and dispatches real-time Telegram alerts — all coordinated over ZeroMQ pub/sub messaging.
+An AI-powered distributed video surveillance system running on a 3-node Raspberry Pi Docker Swarm cluster. It streams live video from a SIYI A8 Mini IP camera, detects motion and objects (including fire and smoke) using NCNN-optimised YOLO models, and dispatches real-time Telegram alerts. The `motion`, `detection_coco`, `detection_fire` and `alert` services communicate over **ROS 2 Humble topics** (DDS); `system_monitor` still uses ZeroMQ pub/sub.
 
 ## Architecture
 
@@ -8,7 +8,22 @@ An AI-powered distributed video surveillance system running on a 3-node Raspberr
 
 Messages are correlated end-to-end via a per-frame `image_id`. The alert service waits up to 2 s for detection results after a motion image arrives, then dispatches — or fires immediately for `fire` / `weapon` class detections.
 
-Peer discovery uses UDP broadcast on `255.255.255.255`. Services fall back to Docker Swarm DNS hostnames (`motion`, `detection_coco`, etc.) if no UDP peer is found.
+### Messaging (ROS 2 topics)
+
+The motion → detection → alert pipeline runs on ROS 2 Humble using the default DDS transport (RMW set to **CycloneDDS**, which is lighter on the Pi edge nodes). Discovery is automatic via DDS multicast, so these services run on the Docker **host network** and must share one LAN subnet and the same `ROS_DOMAIN_ID` (default `0`). No manual peer discovery or fallback hostnames are needed.
+
+Topics are **namespaced per device** by the (ROS-sanitised) hostname, so multiple devices don't collide — e.g. on host `ubuntu-RTX2080` the topics live under `/ubuntu_RTX2080/...` (hyphens become underscores; override with the `ROS_NS` env var). All four services on a device share that namespace.
+
+| Topic (relative) | Type | Publisher → Subscriber |
+|-------|------|------------------------|
+| `motion/flag` | `std_msgs/String` (JSON) | motion → alert |
+| `motion/image` | `sensor_msgs/CompressedImage` (JPEG; metadata in `header.frame_id`) | motion → detection_coco, detection_fire, alert |
+| `detection/coco` | `std_msgs/String` (JSON) | detection_coco → alert |
+| `detection/fire` | `std_msgs/String` (JSON) | detection_fire → alert |
+
+> **Multi-node note:** because the namespace is per-device, the four services must run on the **same host** to share a namespace. The default `replicas: 1` placement can land them on different Swarm nodes (different namespaces → no communication). For a real multi-Pi deployment, run a full motion+detection+alert set per device (e.g. `mode: global` or per-node pinning), or set a shared `ROS_NS`.
+
+`system_monitor` and `report` are unchanged and still use ZeroMQ pub/sub with UDP-broadcast peer discovery on `255.255.255.255`.
 
 ## Services
 
@@ -23,13 +38,13 @@ Peer discovery uses UDP broadcast on `255.255.255.255`. Services fall back to Do
 | `zswarm-dashboard` | `mohsenasm/swarm-dashboard` | **global** (managers) | Docker Swarm web dashboard on port 8080 |
 
 ### motion
-Reads the RTSP stream via FFmpeg at 10 FPS, applies Gaussian blur and frame differencing to detect motion. Publishes a `motion_flag` message (start/end) on port 5556 and base64-encoded JPEG frames with a unique `image_id` on port 5557. A configurable cooldown (default 1 s) prevents flooding the detection pipeline.
+Reads the RTSP stream via FFmpeg at 10 FPS, applies Gaussian blur and frame differencing to detect motion. Publishes a `motion_flag` (JSON) on `motion/flag` and JPEG frames as `sensor_msgs/CompressedImage` on `motion/image`, carrying a unique `image_id` in the message `header.frame_id`. A configurable cooldown (default 1 s) prevents flooding the detection pipeline.
 
 ### detection\_coco
-Subscribes to motion images via peer discovery. Runs YOLOv8n NCNN inference (confidence ≥ 0.5) and publishes `detection_results` on port 5558, preserving the source `image_id` for correlation.
+Subscribes to `motion/image`. Runs YOLOv8n NCNN inference (confidence ≥ 0.5) and publishes `detection_results` on `detection/coco`, preserving the source `image_id` for correlation.
 
 ### detection\_fire
-Identical architecture to `detection_coco` but uses a fire-specific YOLO model. Publishes on port 5559.
+Identical architecture to `detection_coco` but uses a fire-specific YOLO model. Publishes on `detection/fire`.
 
 ### alert
 Correlates `motion_flag`, `motion_image`, and `detection_results` messages by `image_id` and sender node. Implements:
@@ -108,22 +123,23 @@ All defaults live in `shared/config.py` and can be overridden at runtime via env
 
 ### Ports
 
+The ROS 2 services (`motion`, `detection_*`, `alert`) no longer use fixed TCP ports — DDS negotiates ports dynamically over the host network. The remaining fixed ports:
+
 | Port | Protocol | Service | Purpose |
 |------|----------|---------|---------|
-| 5555 | TCP (ZMQ) | all | Node-to-node base port (peer discovery) |
-| 5556 | TCP (ZMQ PUB) | motion | Motion flag events |
-| 5557 | TCP (ZMQ PUB) | motion | Motion JPEG image frames |
-| 5558 | TCP (ZMQ PUB) | detection\_coco | COCO detection results |
-| 5559 | TCP (ZMQ PUB) | detection\_fire | Fire/smoke detection results |
 | 5560 | TCP (ZMQ PUB) | system\_monitor | System telemetry |
-| 50000 | UDP | motion / detection | Peer discovery broadcast |
 | 50001 | UDP | system\_monitor | Peer discovery broadcast |
 | 8080 | HTTP | zswarm-dashboard | Swarm web UI |
+
+ROS 2 / DDS uses UDP in the ephemeral range (multicast `239.255.0.1` for discovery plus per-participant unicast ports) on the host network; ensure the LAN/firewall allows it between nodes.
 
 ### Key environment variables
 
 | Variable | Default | Service | Description |
 |----------|---------|---------|-------------|
+| `ROS_DOMAIN_ID` | `0` | motion / detection / alert | ROS 2 DDS domain; must match across all ROS 2 nodes |
+| `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` | motion / detection / alert | DDS middleware (CycloneDDS for edge) |
+| `TOPIC_MOTION_IMAGE` | `motion/image` | motion / detection / alert | Override the motion image topic name |
 | `MOTION_URL` | `rtsp://192.168.144.25:8554/main.264` | motion | RTSP source URL |
 | `MOTION_FPS` | `10` | motion | Capture / process frame rate |
 | `MOTION_THRESHOLD` | `0.5` | motion | Pixel-change ratio to trigger motion |
@@ -170,7 +186,7 @@ In Scenarios B1 and B2, the rebalancer redistributes detection services onto rem
 
 ### End-to-End Pipeline Latency
 
-Queue Age measures the full pipeline: camera publish → motion → ZMQ transport → detection → alert dispatch.
+Queue Age measures the full pipeline: camera publish → motion → ROS 2 (DDS) transport → detection → alert dispatch.
 
 | Metric | Scenario A | Scenario B1 | Scenario B2 |
 |--------|-----------|------------|------------|

@@ -1,12 +1,19 @@
 services:
   motion:
-    image: ${DOCKERHUB_USERNAME}/ds-motion:latest
+    image: ${DOCKERHUB_USERNAME:-local}/ds-motion:latest
+    build:
+      context: .
+      dockerfile: motion/Dockerfile
+    # Host networking so ROS 2 / CycloneDDS multicast discovery works across nodes.
+    networks:
+      - hostnet
+    environment:
+      ROS_DOMAIN_ID: "0"
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
       - /etc/hostname:/host_hostname:ro
-    networks:
-      - eyes_edge_net
     # healthcheck:
     #   test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', 5557)); s.close()"]
     #   interval: 10s
@@ -25,14 +32,19 @@ services:
           - node.hostname != pi3
 
   detection_coco:
-    image: ${DOCKERHUB_USERNAME}/ds-detection-coco:latest
+    image: ${DOCKERHUB_USERNAME:-local}/ds-detection-coco:latest
+    build:
+      context: .
+      dockerfile: detection_coco/Dockerfile
+    networks:
+      - hostnet
+    environment:
+      ROS_DOMAIN_ID: "0"
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
       - /etc/hostname:/host_hostname:ro
-    networks:
-      - eyes_edge_net
-
     deploy:
       replicas: 1
       labels:
@@ -47,13 +59,19 @@ services:
 
 
   detection_fire:
-    image: ${DOCKERHUB_USERNAME}/ds-detection-fire:latest
+    image: ${DOCKERHUB_USERNAME:-local}/ds-detection-fire:latest
+    build:
+      context: .
+      dockerfile: detection_fire/Dockerfile
+    networks:
+      - hostnet
+    environment:
+      ROS_DOMAIN_ID: "0"
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
       - /etc/hostname:/host_hostname:ro
-    networks:
-      - eyes_edge_net
     # depends_on:
       # motion:
         # condition: service_healthy
@@ -70,15 +88,21 @@ services:
 
 
   alert:
-    image: ${DOCKERHUB_USERNAME}/ds-alert:latest
+    image: ${DOCKERHUB_USERNAME:-local}/ds-alert:latest
+    build:
+      context: .
+      dockerfile: alert/Dockerfile
     env_file:
       - ./.env
+    networks:
+      - hostnet
+    environment:
+      ROS_DOMAIN_ID: "0"
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
       - /etc/hostname:/host_hostname:ro
-    networks:
-      - eyes_edge_net
     deploy:
       replicas: 1
       labels:
@@ -90,7 +114,10 @@ services:
 
 
   system_monitor:
-    image: ${DOCKERHUB_USERNAME}/ds-system-monitor:latest
+    image: ${DOCKERHUB_USERNAME:-local}/ds-system-monitor:latest
+    build:
+      context: .
+      dockerfile: system_monitor/Dockerfile
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
@@ -175,6 +202,12 @@ networks:
   eyes_edge_net:
     driver: overlay
     attachable: true
+  # Docker's built-in host network, referenced so the ROS 2 services can use
+  # host networking under Swarm (required for CycloneDDS multicast discovery
+  # across nodes). All ROS 2 nodes must share one L2 subnet and ROS_DOMAIN_ID.
+  hostnet:
+    external: true
+    name: host
 
 volumes:
   shared_data:

@@ -1,6 +1,8 @@
 # COCO Detection Processor
 
-The COCO detection processor performs object detection on motion-triggered images using YOLO and publishes structured detection results over ZeroMQ.
+> **Note:** Migrated from ZeroMQ to **ROS 2 Humble**. It now runs as an `rclpy` node that subscribes to `motion/image` (`sensor_msgs/CompressedImage`) and publishes `detection_results` (`std_msgs/String` JSON) on topic `detection/coco`. The `ZMQNode` / port / peer-discovery details below are historical; transport is now DDS (CycloneDDS). See the repo `README.md` for the current topic map.
+
+The COCO detection processor performs object detection on motion-triggered images using YOLO and publishes structured detection results over ROS 2 topics.
 
 ## Overview
 
