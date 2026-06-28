@@ -45,15 +45,14 @@ fi
 
 echo "[1/3] Building images..."
 docker build -t "${DOCKERHUB_USERNAME}/ds-motion:latest" -f motion/Dockerfile .
-# docker build -t "${DOCKERHUB_USERNAME}/ds-detection-coco:latest" -f detection_coco/Dockerfile .
-# docker build -t "${DOCKERHUB_USERNAME}/ds-detection-fire:latest" -f detection_fire/Dockerfile .
+# coco and fire share the single ds-detection image (DETECTOR env selects model)
+# docker build -t "${DOCKERHUB_USERNAME}/ds-detection:latest" -f detection/Dockerfile .
 # docker build -t "${DOCKERHUB_USERNAME}/ds-alert:latest" -f alert/Dockerfile .
 # docker build -t "${DOCKERHUB_USERNAME}/ds-system-monitor:latest" -f system_monitor/Dockerfile .
 
 echo "[2/3] Pushing images to Docker Hub..."
 docker push "${DOCKERHUB_USERNAME}/ds-motion:latest"
-# docker push "${DOCKERHUB_USERNAME}/ds-detection-coco:latest"
-# docker push "${DOCKERHUB_USERNAME}/ds-detection-fire:latest"
+# docker push "${DOCKERHUB_USERNAME}/ds-detection:latest"
 # docker push "${DOCKERHUB_USERNAME}/ds-alert:latest"
 # docker push "${DOCKERHUB_USERNAME}/ds-system-monitor:latest"
 

@@ -22,6 +22,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Shared modules + service runtime file
 COPY shared/ros_common.py /app/ros_common.py
 COPY shared/config.py /app/config.py
+COPY config.yaml /app/config.yaml
 COPY motion/motion.py /app/motion.py
 
 # Source the ROS 2 environment, then run the node

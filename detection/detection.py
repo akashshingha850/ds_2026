@@ -17,18 +17,25 @@ from ultralytics import YOLO
 # Allow importing the shared config / helpers copied into /app
 sys.path.append('.')
 
-from config import (
-    YOLO_FIRE_CONFIDENCE,
-    TOPIC_MOTION_IMAGE,
-    TOPIC_DETECTION_FIRE,
-)
+import config
+from config import TOPIC_MOTION_IMAGE
 from ros_common import resolve_device_hostname, ros_namespace, setup_logging
+
+
+# This single node serves every detector (coco, fire, ...). The DETECTOR env var
+# selects which model to load, which output topic to publish on, and which
+# confidence threshold to use. The config.yaml stays the single source for the
+# per-detector topic names and confidence thresholds.
+DETECTOR = os.getenv("DETECTOR", "coco").strip().lower()
+MODEL_PATH = os.getenv("MODEL_PATH", f"models/{DETECTOR}")
+TOPIC_DETECTION_OUT = getattr(config, f"TOPIC_DETECTION_{DETECTOR.upper()}")
+DETECTION_CONFIDENCE = getattr(config, f"YOLO_{DETECTOR.upper()}_CONFIDENCE")
 
 
 class DetectionProcessor(Node):
     def __init__(self, model_path):
-        super().__init__('detection_fire', namespace=ros_namespace())
-        self.node_id = f"{resolve_device_hostname()}-detection_fire"
+        super().__init__(f'detection_{DETECTOR}', namespace=ros_namespace())
+        self.node_id = f"{resolve_device_hostname()}-detection_{DETECTOR}"
         self.model_path = model_path
         self.model = self.load_model()
 
@@ -37,12 +44,12 @@ class DetectionProcessor(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=50,
         )
-        self.det_pub = self.create_publisher(String, TOPIC_DETECTION_FIRE, qos)
+        self.det_pub = self.create_publisher(String, TOPIC_DETECTION_OUT, qos)
         self.sub = self.create_subscription(
             CompressedImage, TOPIC_MOTION_IMAGE, self.on_image, qos
         )
 
-        logging.info(f"[DET_PUB:{self.node_id}] Publishing on topic '{TOPIC_DETECTION_FIRE}'")
+        logging.info(f"[DET_PUB:{self.node_id}] Publishing on topic '{TOPIC_DETECTION_OUT}'")
         logging.info(f"[SUB:{self.node_id}] Subscribing to motion images on '{TOPIC_MOTION_IMAGE}'")
 
     def _compute_queue_age_seconds(self, send_ts, recv_ts_iso):
@@ -67,7 +74,7 @@ class DetectionProcessor(Node):
 
     def run_inference(self, image):
         """Run inference on the image using the model."""
-        return self.model(image, conf=YOLO_FIRE_CONFIDENCE)
+        return self.model(image, conf=DETECTION_CONFIDENCE)
 
     def publish_detection_results(self, detections, timestamp, sender, image_id=None):
         """Publish detection results on the ROS 2 detection topic."""
@@ -107,6 +114,7 @@ class DetectionProcessor(Node):
         results = self.run_inference(frame)
         inference_ms = (time.perf_counter() - inference_start) * 1000
         detection_ts = datetime.now().isoformat()
+        print(f"[SUB] received from {sender} (Image #{image_id})")
 
         detections = []
         for result in results:
@@ -130,12 +138,10 @@ class DetectionProcessor(Node):
 
 def main():
     setup_logging()
-    # Hardcoded model path
-    model_path = "detection_fire/yolo_fire_ncnn_model"
 
     rclpy.init()
-    processor = DetectionProcessor(model_path)
-    print(f"[DET:{processor.node_id}] Detection processor started\n")
+    processor = DetectionProcessor(MODEL_PATH)
+    print(f"[DET:{processor.node_id}] Detection processor started (detector={DETECTOR}, model={MODEL_PATH})\n")
     try:
         rclpy.spin(processor)
     except KeyboardInterrupt:

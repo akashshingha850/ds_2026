@@ -31,16 +31,19 @@ services:
         constraints:
           - node.hostname != pi3
 
+  # Both detection services share the single ds-detection image; the DETECTOR
+  # env var selects the model (models/<detector>), output topic, and confidence.
   detection_coco:
-    image: ${DOCKERHUB_USERNAME:-local}/ds-detection-coco:latest
+    image: ${DOCKERHUB_USERNAME:-local}/ds-detection:latest
     build:
       context: .
-      dockerfile: detection_coco/Dockerfile
+      dockerfile: detection/Dockerfile
     networks:
       - hostnet
     environment:
       ROS_DOMAIN_ID: "0"
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      DETECTOR: coco
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
@@ -59,15 +62,16 @@ services:
 
 
   detection_fire:
-    image: ${DOCKERHUB_USERNAME:-local}/ds-detection-fire:latest
+    image: ${DOCKERHUB_USERNAME:-local}/ds-detection:latest
     build:
       context: .
-      dockerfile: detection_fire/Dockerfile
+      dockerfile: detection/Dockerfile
     networks:
       - hostnet
     environment:
       ROS_DOMAIN_ID: "0"
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      DETECTOR: fire
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
@@ -118,15 +122,15 @@ services:
     build:
       context: .
       dockerfile: system_monitor/Dockerfile
+    networks:
+      - hostnet
+    environment:
+      ROS_DOMAIN_ID: "0"
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
     volumes:
       - shared_data:/app/shared
       - ./logs:/app/logs
       - /etc/hostname:/host_hostname:ro
-    networks:
-      - eyes_edge_net
-    # depends_on:
-      # motion:
-        # condition: service_healthy
     deploy:
       mode: global
       labels:
@@ -199,9 +203,6 @@ services:
     
 
 networks:
-  eyes_edge_net:
-    driver: overlay
-    attachable: true
   # Docker's built-in host network, referenced so the ROS 2 services can use
   # host networking under Swarm (required for CycloneDDS multicast discovery
   # across nodes). All ROS 2 nodes must share one L2 subnet and ROS_DOMAIN_ID.

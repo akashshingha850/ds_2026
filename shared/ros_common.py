@@ -1,10 +1,8 @@
-"""Shared helpers for the ROS 2 services (motion / detection / alert).
+"""Shared helpers for the ROS 2 services (motion / detection / alert /
+system_monitor).
 
-This module is intentionally free of any ZeroMQ dependency so the ROS 2 service
-images do not need ``pyzmq`` installed. The legacy ZeroMQ services
-(``system_monitor``, ``report``) keep using ``shared/utils.py`` and its
-``ZMQNode``; this module only provides the hostname resolution and logging
-setup that every service shares.
+All services now communicate over ROS 2 topics, so this module only provides
+the hostname resolution, namespace, and logging setup that every service shares.
 """
 
 import logging
@@ -51,8 +49,6 @@ def resolve_device_hostname():
 def setup_logging():
     """Configure logging to a hostname-specific file plus the console.
 
-    Mirrors the behaviour previously provided as a side effect of importing
-    ``shared/utils.py`` so log output is unchanged after the ROS 2 migration.
     Returns the resolved device hostname for convenience.
     """
     os.makedirs("logs", exist_ok=True)

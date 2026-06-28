@@ -16,20 +16,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Install Python requirements first so edits to shared modules / source
 # below don't invalidate the (slow) torch/ultralytics pip layer.
-COPY detection_fire/requirements.txt /app/requirements.txt
+COPY detection/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
 	pip install --no-cache-dir -r /app/requirements.txt
 
-# Shared modules + main script
+# Shared modules + main script + config
 COPY shared/ros_common.py /app/ros_common.py
 COPY shared/config.py /app/config.py
-COPY detection_fire/detection_fire.py /app/detection_fire.py
+COPY config.yaml /app/config.yaml
+COPY detection/detection.py /app/detection.py
 
-# Copy NCNN model directory (.bin, .param, metadata)
-COPY detection_fire/yolo_fire_ncnn_model/ /app/detection_fire/yolo_fire_ncnn_model/
+# Both detector models (coco, fire). The DETECTOR env var selects which one
+# the container loads at runtime via MODEL_PATH (default models/<detector>).
+COPY detection/models/ /app/models/
 
 # (Optional) Clean up __pycache__
 RUN find /app -type d -name '__pycache__' -exec rm -r {} + || true
 
 # Source the ROS 2 environment, then run the node
-CMD ["bash", "-lc", "source /opt/ros/humble/setup.bash && exec python3 /app/detection_fire.py"]
+CMD ["bash", "-lc", "source /opt/ros/humble/setup.bash && exec python3 /app/detection.py"]

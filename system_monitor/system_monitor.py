@@ -1,43 +1,22 @@
+import json
+import logging
+import os
+import sys
+import time
+from datetime import datetime
 
 import psutil
-import time
-from config import SYSTEM_MONITOR_INTERVAL, SYSTEM_MONITOR_PORT, DISCOVERY_PORT_SYSTEM
-from datetime import datetime
-import socket
-import logging
-import sys
-import zmq
-from utils import ZMQNode, resolve_device_hostname
-import os
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
+from std_msgs.msg import String
 
-hostname = resolve_device_hostname()
-now = datetime.now().strftime('%H.%M.%S')
-log_filename = f"logs/{hostname}-htop-{now}.log"
-
-# Override logging settings: logs/<hostname>-top-time(HH.MM.SS).log
-for handler in logging.root.handlers[:]:
-    logging.root.removeHandler(handler)
-os.makedirs('logs', exist_ok=True)
-logging.basicConfig(
-    filename=log_filename,
-    level=logging.INFO,
-    format='%(asctime)s - %(message)s'
-)
-# Add console handler again
-console = logging.StreamHandler()
-console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(message)s')
-console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
-
-
-# Add parent directory to path to import config
+# Allow importing the shared config / helpers copied into /app
 sys.path.append('.')
 
+from config import SYSTEM_MONITOR_INTERVAL, TOPIC_SYSTEM_STATUS
+from ros_common import resolve_device_hostname, ros_namespace, setup_logging
 
-def get_cpu_status():
-    """Get CPU usage percentage."""
-    return psutil.cpu_percent(interval=SYSTEM_MONITOR_INTERVAL)
 
 def get_memory_status():
     """Get memory usage."""
@@ -46,69 +25,42 @@ def get_memory_status():
         'total': mem.total,
         'available': mem.available,
         'percent': mem.percent,
-        'used': mem.used
+        'used': mem.used,
     }
 
-def get_disk_status_static():
-    """Get disk usage (static, no speed)."""
-    disk = psutil.disk_usage('/')
-    return {
-        'total': disk.total,
-        'used': disk.used,
-        'free': disk.free,
-        'percent': disk.percent
-    }
-
-def get_network_status_static(net_counters):
-    """Get network I/O statistics (static, no speed)."""
-    return {
-        'bytes_sent': net_counters.bytes_sent,
-        'bytes_recv': net_counters.bytes_recv,
-        'packets_sent': net_counters.packets_sent,
-        'packets_recv': net_counters.packets_recv
-    }
 
 def get_temperature_status():
-    """Get system temperatures."""
+    """Get system temperature (first available sensor)."""
     try:
         temps = psutil.sensors_temperatures()
         if temps:
-            # Return the first available temperature sensor
-            for sensor, readings in temps.items():
+            for _sensor, readings in temps.items():
                 if readings:
-                    temp_value = readings[0].current
-                    return f"{temp_value}°C"
-        return "Temperature sensors not available"
-    except Exception as e:
-        return 'N/A' # f"Error getting temperature: {e}"
+                    return f"{readings[0].current}°C"
+        return "N/A"
+    except Exception:
+        return "N/A"
 
 
 def get_speeds():
     """Get disk and network I/O speeds over SYSTEM_MONITOR_INTERVAL."""
-    # Get initial counters for speed calculations
     io1 = psutil.disk_io_counters()
     net1 = psutil.net_io_counters()
-    # Sleep for interval
     time.sleep(SYSTEM_MONITOR_INTERVAL)
-
-    # Get final counters
     io2 = psutil.disk_io_counters()
     net2 = psutil.net_io_counters()
 
-    # Calculate speeds
     if io1 and io2:
         read_speed = (io2.read_bytes - io1.read_bytes) / SYSTEM_MONITOR_INTERVAL
         write_speed = (io2.write_bytes - io1.write_bytes) / SYSTEM_MONITOR_INTERVAL
     else:
-        read_speed = 0
-        write_speed = 0
-    
+        read_speed = write_speed = 0
+
     if net1 and net2:
         send_speed = (net2.bytes_sent - net1.bytes_sent) / SYSTEM_MONITOR_INTERVAL
         recv_speed = (net2.bytes_recv - net1.bytes_recv) / SYSTEM_MONITOR_INTERVAL
     else:
-        send_speed = 0
-        recv_speed = 0
+        send_speed = recv_speed = 0
 
     return {
         'read_speed': read_speed,
@@ -117,23 +69,40 @@ def get_speeds():
         'recv_speed': recv_speed,
     }
 
-class SystemMonitor(ZMQNode):
-    def __init__(self):
-        super().__init__('system_monitor', discovery_port=DISCOVERY_PORT_SYSTEM)
-        self.pub_port = SYSTEM_MONITOR_PORT  # For discovery
-        self.status_pub = self.context.socket(zmq.PUB)
-        self.status_pub.bind(f"tcp://*:{SYSTEM_MONITOR_PORT}")
 
-    def publish_status(self, speeds, cpu_usage, mem, temp, ts):
-        """Publish system status via ZeroMQ."""
-        
+class SystemMonitor(Node):
+    def __init__(self):
+        super().__init__('system_monitor', namespace=ros_namespace())
+        self.node_id = f"{resolve_device_hostname()}-system_monitor"
+
+        qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
+        self.status_pub = self.create_publisher(String, TOPIC_SYSTEM_STATUS, qos)
+        # get_speeds() blocks for SYSTEM_MONITOR_INTERVAL, so each callback is
+        # already paced by that sample window; use a 0s timer and let the
+        # blocking sample set the cadence.
+        self.timer = self.create_timer(0.0, self.publish_status)
+
+        logging.info(f"[STATUS_PUB:{self.node_id}] Publishing on topic '{TOPIC_SYSTEM_STATUS}'")
+
+    def publish_status(self):
+        """Sample system metrics and publish them over ROS 2."""
+        speeds = get_speeds()  # includes the interval sleep
+        cpu = psutil.cpu_percent(interval=0)
+        mem = get_memory_status()
+        temp = get_temperature_status()
+        ts = datetime.now().isoformat()
+
         status_data = {
             'type': 'system_status',
             'node_id': self.node_id,
             'timestamp': ts,
-            'cpu': cpu_usage,
-            'memory_used_gb': mem['used'] / (1024**3),
-            'memory_total_gb': mem['total'] / (1024**3),
+            'cpu': cpu,
+            'memory_used_gb': mem['used'] / (1024 ** 3),
+            'memory_total_gb': mem['total'] / (1024 ** 3),
             'memory_percent': mem['percent'],
             'disk_read_kbs': speeds['read_speed'] / 1024,
             'disk_write_kbs': speeds['write_speed'] / 1024,
@@ -141,63 +110,35 @@ class SystemMonitor(ZMQNode):
             'network_recv_kbs': speeds['recv_speed'] / 1024,
             'temperature': temp,
         }
-        
-        self.status_pub.send_json(status_data)
-        
-        # Also log locally
-        message = (
+
+        msg = String()
+        msg.data = json.dumps(status_data)
+        self.status_pub.publish(msg)
+
+        logging.info(
             f"Node ID: {self.node_id}, "
-            f"CPU: {cpu_usage}%, "
-            f"Memory: {mem['used'] / (1024**3):.2f}/{mem['total'] / (1024**3):.2f} GB ({mem['percent']}%), "
+            f"CPU: {cpu}%, "
+            f"Memory: {mem['used'] / (1024 ** 3):.2f}/{mem['total'] / (1024 ** 3):.2f} GB ({mem['percent']}%), "
             f"Temp: {temp}, "
             f"Disk R/W: {speeds['read_speed'] / 1024:.2f}/{speeds['write_speed'] / 1024:.2f} KB/s, "
-            f"Network U/D: {speeds['send_speed'] / 1024:.2f}/{speeds['recv_speed'] / 1024:.2f} KB/s, "
+            f"Network U/D: {speeds['send_speed'] / 1024:.2f}/{speeds['recv_speed'] / 1024:.2f} KB/s"
         )
-        logging.info(message)
 
-    def save_log(self, cpu_usage, mem, speeds, temp, ts):
-        """Save system status to a local log file."""
 
-        log_message = (
-            f"Node ID: {self.node_id}, "
-            f"CPU: {cpu_usage}%, "
-            f"Memory: {mem['used'] / (1024**3):.2f}/{mem['total'] / (1024**3):.2f} GB ({mem['percent']}%), "
-            f"Disk R/W: {speeds['read_speed'] / 1024:.2f}/{speeds['write_speed'] / 1024:.2f} KB/s, "
-            f"Network U/D: {speeds['send_speed'] / 1024:.2f}/{speeds['recv_speed'] / 1024:.2f} KB/s, "
-            f"Temp: {temp}, "
-        )
-        logging.info(log_message)
-
-    def run(self):
-        # Start discovery thread
-        self.start_discovery()
-
-        logging.info(f"[STATUS_PUB:{self.node_id}] Listening on tcp://*:{SYSTEM_MONITOR_PORT}")
-        logging.info(f"[PUB:{self.node_id}] Local IP: {self.local_ip}")
-
-        logging.info("Starting system monitoring... Press Ctrl+C to stop.")
-
-        try:
-            while True:
-                # Get speeds (includes sleep)
-                speeds = get_speeds()
-
-                # Get other stats
-                cpu = psutil.cpu_percent(interval=0)
-                mem = get_memory_status()
-                temp = get_temperature_status()
-                ts = datetime.now().isoformat()
-
-                # self.save_log(cpu, mem, speeds, temp, ts)
-                self.publish_status(speeds, cpu, mem, temp, ts)
-
-        except KeyboardInterrupt:
-            logging.info("User stopped system monitoring with Ctrl+C.")
-        finally:
-            self.status_pub.close()
-            self.cleanup()
+def main():
+    setup_logging()
+    rclpy.init()
+    monitor = SystemMonitor()
+    print(f"[MONITOR:{monitor.node_id}] System monitor started\n")
+    try:
+        rclpy.spin(monitor)
+    except KeyboardInterrupt:
+        logging.info("User stopped system monitoring with Ctrl+C.")
+    finally:
+        monitor.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
-    monitor = SystemMonitor()
-    monitor.run()
+    main()

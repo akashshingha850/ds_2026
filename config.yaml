@@ -1,0 +1,49 @@
+# =============================================================================
+# SINGLE CONFIGURATION FILE FOR ALL ds_2026 SERVICES
+# =============================================================================
+# Loaded by shared/config.py, which flattens these sections into module-level
+# constants (motion / detection / alert / system_monitor all do
+# `from config import NAME`).
+#
+# Any value here can be overridden at runtime by an environment variable of the
+# same name (e.g. MOTION_URL, ALERT_TELEGRAM_BOT_TOKEN). Secrets live in .env.
+# =============================================================================
+
+# ROS 2 topic names (motion -> detection -> alert pipeline + system status)
+topics:
+  TOPIC_MOTION_FLAG: motion/flag
+  TOPIC_MOTION_IMAGE: motion/image
+  TOPIC_DETECTION_COCO: detection/coco
+  TOPIC_DETECTION_FIRE: detection/fire
+  TOPIC_SYSTEM_STATUS: system/status
+
+# Motion detection
+motion:
+  MOTION_URL: rtsp://192.168.144.25:8554/main.264   # SIYI camera RTSP URL
+  MOTION_THRESHOLD: 0.5
+  MOTION_FPS: 10
+  PIXEL_DIFF_THRESHOLD: 50
+  BLUR_SIGMA: 1.5
+  KERNEL_SIZE: 5
+  MOTION_IMAGE_PUBLISH_COOLDOWN: 1.0   # seconds between continuous motion image publishing
+
+# Detection (YOLO)
+detection:
+  YOLO_COCO_CONFIDENCE: 0.5
+  YOLO_FIRE_CONFIDENCE: 0.5
+
+# Alerting (Telegram / webhook). Secrets are provided via .env.
+alert:
+  ALERTS_ENABLED: true
+  ALERT_DRY_RUN: false
+  ALERT_COOLDOWN_SECONDS: 60
+  ALERT_TELEGRAM_ENABLED: true
+  ALERT_TELEGRAM_ATTACH_IMAGE: true
+  ALERT_TELEGRAM_BOT_TOKEN: ""
+  ALERT_TELEGRAM_CHAT_ID: ""
+  ALERT_WEBHOOK_ENABLED: false
+  ALERT_WEBHOOK_URL: ""
+
+# System monitor (publishes status over ROS 2 on TOPIC_SYSTEM_STATUS)
+system_monitor:
+  SYSTEM_MONITOR_INTERVAL: 1   # seconds
